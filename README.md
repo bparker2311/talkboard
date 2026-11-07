@@ -16,7 +16,8 @@ Static files, no build step. In this folder:
 ## Using it
 - Hold the 🔒 button for 2 seconds for parent mode. Tap any picture to edit, or + to add.
 - Each picture can have a photo, a recorded voice, and a sign video (YouTube link with start/end, or your own clip).
-- Settings: grid columns, voice and speed, categories, backup/restore.
+- In parent mode, press-hold-drag a picture to swap spots, drop it on a category tab to move it there, or hover over a page arrow to flip pages.
+- Settings: layout (pages or scrolling, rows, columns), hold-to-select time, tap cooldown, palm rejection, voice and speed, show/hide categories, backup/restore.
 - Data lives only on the tablet (IndexedDB). Save a backup after big changes.
 
 After changing index.html, bump VERSION in sw.js so the tablet picks up the update.

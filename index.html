@@ -50,7 +50,23 @@
   .tab.on{color:var(--ink); border-bottom-color:var(--accent); background:#fff; box-shadow:0 -2px 6px rgba(0,0,0,.05)}
 
   /* Grid */
-  .gridwrap{flex:1; overflow-y:auto; padding:10px; background:#fff}
+  .gridwrap{flex:1; overflow-y:auto; padding:10px; background:#fff; min-height:0}
+  .gridwrap.fit{overflow:hidden; display:flex}
+  .grid.fit{flex:1; height:100%}
+  .grid.fit .tile{aspect-ratio:auto; min-height:0}
+  .grid.fit .tile .pic{font-size:min(6vw, 8.5vh)}
+  .grid.fit .tile .pic.big{font-size:min(7vw, 10vh)}
+  .pager{display:none; align-items:center; justify-content:space-between; gap:10px; padding:6px 10px 10px; background:#fff; flex:none}
+  .pager.on{display:flex}
+  .pager button{border:0; border-radius:14px; background:#E6E9EF; font-size:30px; width:120px; height:58px}
+  .pager button:disabled{opacity:.25}
+  .dots{display:flex; gap:8px}
+  .dot{width:12px; height:12px; border-radius:50%; background:#CBD2DC}
+  .dot.on{background:var(--accent)}
+  .tile.holding::before{content:""; position:absolute; left:0; bottom:0; width:100%; height:0; background:rgba(47,111,235,.28); animation:fillup var(--hold,500ms) linear forwards; pointer-events:none}
+  @keyframes fillup{to{height:100%}}
+  .tab.hiddencat{opacity:.45}
+  .tab.hiddencat::after{content:"🙈"; font-size:14px}
   .grid{display:grid; gap:10px}
   .tile{position:relative; border:0; border-radius:var(--radius); background:var(--bg-tile,#fff);
     box-shadow:0 1px 2px rgba(0,0,0,.12), inset 0 0 0 2px rgba(0,0,0,.06);
@@ -133,6 +149,7 @@
   <div class="core" id="core"></div>
   <div class="tabs" id="tabs"></div>
   <div class="gridwrap"><div class="grid" id="grid"></div></div>
+  <div class="pager" id="pager"><button id="pgPrev" aria-label="Previous page">◀</button><div class="dots" id="pgDots"></div><button id="pgNext" aria-label="Next page">▶</button></div>
 </div>
 
 <!-- Tile editor -->
@@ -211,7 +228,16 @@
     <h2>Settings</h2>
     <h3>Grid</h3>
     <div class="row"><label>Columns</label><select id="sCols"></select></div>
+    <div class="row"><label>Layout</label><select id="sFit"><option value="1">Pages (no scrolling)</option><option value="0">Scrolling list</option></select></div>
+    <div class="row" id="rowsRow"><label>Rows per page</label><select id="sRows"></select></div>
     <div class="row"><label>Sentence bar</label><select id="sBar"><option value="1">Show</option><option value="0">Hide (just speak each word)</option></select></div>
+    <div class="row"><label>Clear &amp; ⌫ buttons</label><select id="sClear"><option value="1">Show</option><option value="0">Hide</option></select></div>
+    <h3>Touch</h3>
+    <div class="row"><label>Hold to select</label><select id="sHold"></select></div>
+    <p class="hint">Her finger has to stay on a picture this long before it talks. A blue fill shows the progress. Brief brushes and swipes do nothing.</p>
+    <div class="row"><label>Tap cooldown</label><select id="sCool"></select></div>
+    <p class="hint">After a word is spoken, other taps are ignored for this long. Stops rapid-fire tapping.</p>
+    <div class="row"><label>Ignore palms</label><select id="sPalm"><option value="1">On: ignore palms and 2+ fingers</option><option value="0">Off</option></select></div>
     <h3>Voice</h3>
     <div class="row"><label>Voice</label><select id="sVoice"></select></div>
     <div class="row"><label>Speed</label><input type="range" id="sRate" min="0.5" max="1.4" step="0.05" style="flex:1"><span id="sRateV" class="hint"></span></div>
@@ -259,6 +285,7 @@
 "use strict";
 const $ = s => document.querySelector(s);
 const SLOTS = 30, CORE_SLOTS = 10;
+const DEFAULTS = { cols:6, rate:0.9, voice:"", bar:true, fit:true, rows:3, hold:0, cooldown:500, palm:true, showClear:true };
 const COLORS = ["#FFFFFF","#FFE9A8","#CDEBB0","#FFD3A3","#B9DCF7","#F7C4D8","#DCC8F0","#E4E7EB"];
 const uid = () => Math.random().toString(36).slice(2,10) + Date.now().toString(36).slice(-4);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -309,7 +336,7 @@ function starter(){
   const Y="#FFE9A8", G="#CDEBB0", O="#FFD3A3", B="#B9DCF7", P="#F7C4D8", W="#FFFFFF", V="#DCC8F0";
   return {
     v:1,
-    settings:{ cols:6, rate:0.9, voice:"", bar:true },
+    settings:{ ...DEFAULTS },
     core: pad([
       T("I","🙋",Y), T("want","🤲",G), T("more","➕",G), T("stop","✋",P), T("go","🏃",G),
       T("help","🆘",G), T("all done","🏁",P), T("yes","👍",P), T("no","👎",P), T("like","❤️",G)
@@ -353,7 +380,7 @@ function starter(){
 }
 
 /* ---------- State ---------- */
-let board, curCat = 0, editing = false, sentence = [];
+let board, curCat = 0, page = 0, editing = false, sentence = [];
 let saveTimer = null;
 function save(){ clearTimeout(saveTimer); saveTimer = setTimeout(() => store.put("kv","board", JSON.stringify(board)), 250); }
 
@@ -410,32 +437,63 @@ function renderCore(){
   el.innerHTML = items;
   el.style.display = items ? "" : "none";
 }
-function renderTabs(){
-  $("#tabs").innerHTML = board.cats.map((c,i) =>
-    `<button class="tab ${i===curCat?"on":""}" data-cat="${i}"><span class="e">${esc(c.emoji)}</span>${esc(c.name)}</button>`).join("");
+function visibleCat(i){ return editing || !board.cats[i].hidden; }
+function fixCurCat(){
+  if (!board.cats.some(c => !c.hidden)) return;           // all hidden: show everything
+  if (!visibleCat(curCat)) { curCat = board.cats.findIndex(c => !c.hidden); page = 0; }
 }
+function renderTabs(){
+  const allHidden = !board.cats.some(c => !c.hidden);
+  $("#tabs").innerHTML = board.cats.map((c,i) => (allHidden || visibleCat(i)) ?
+    `<button class="tab ${i===curCat?"on":""} ${c.hidden?"hiddencat":""}" data-cat="${i}"><span class="e">${esc(c.emoji)}</span>${esc(c.name)}</button>` : "").join("");
+}
+function lastFilled(cat){ let i = cat.slots.length - 1; while (i >= 0 && !cat.slots[i]) i--; return i; }
 function renderGrid(){
   const cat = board.cats[curCat];
-  const g = $("#grid");
-  g.style.gridTemplateColumns = `repeat(${board.settings.cols}, minmax(0,1fr))`;
+  const g = $("#grid"), gw = $(".gridwrap"), pager = $("#pager"), st = board.settings;
+  const cols = st.cols;
+  g.style.gridTemplateColumns = `repeat(${cols}, minmax(0,1fr))`;
   if (!cat) { g.innerHTML = ""; return; }
-  let last = cat.slots.length - 1;
-  if (!editing) { while (last >= 0 && !cat.slots[last]) last--; }
-  const cols = board.settings.cols;
-  const end = editing ? cat.slots.length : Math.ceil((last+1)/cols)*cols;
+  while (cat.slots.length < SLOTS) cat.slots.push(null);
+  const last = lastFilled(cat);
+  let from = 0, to;
+  if (st.fit) {
+    const ps = cols * st.rows;
+    let pages = Math.max(1, Math.ceil((last + 1) / ps));
+    if (editing && last + 1 >= pages * ps) pages++;           // room to grow while editing
+    if (editing) pages = Math.max(pages, Math.ceil(SLOTS / ps));
+    while (cat.slots.length < pages * ps) cat.slots.push(null);
+    page = Math.max(0, Math.min(page, pages - 1));
+    from = page * ps; to = from + ps;
+    g.style.gridTemplateRows = `repeat(${st.rows}, minmax(0,1fr))`;
+    g.classList.add("fit"); gw.classList.add("fit");
+    pager.classList.toggle("on", pages > 1);
+    $("#pgDots").innerHTML = Array.from({length:pages}, (_,i) => `<span class="dot ${i===page?"on":""}"></span>`).join("");
+    $("#pgPrev").disabled = page === 0; $("#pgNext").disabled = page >= pages - 1;
+  } else {
+    to = editing ? cat.slots.length : Math.ceil((last + 1) / cols) * cols;
+    g.style.gridTemplateRows = "";
+    g.classList.remove("fit"); gw.classList.remove("fit"); pager.classList.remove("on");
+  }
   let html = "";
-  for (let i=0;i<Math.min(end,cat.slots.length);i++) html += tileHTML(cat.slots[i],"cat",i);
+  for (let i = from; i < Math.min(to, cat.slots.length); i++) html += tileHTML(cat.slots[i], "cat", i);
+  // keep empty cells so pictures never shift position on a page
+  if (st.fit) for (let i = cat.slots.length; i < to; i++) html += tileHTML(null, "cat", i);
   g.innerHTML = html;
 }
+function goPage(d){ page += d; renderGrid(); }
+$("#pgPrev").onclick = () => goPage(-1);
+$("#pgNext").onclick = () => goPage(1);
 function renderSentence(){
   const el = $("#sentence");
   el.innerHTML = sentence.map(t => `<span class="chip">${t.img?`<img src="${t.img}" alt="">`:(t.emoji?esc(t.emoji):"")}${esc(t.label)}</span>`).join("");
   el.scrollLeft = el.scrollWidth;
   const show = board.settings.bar;
-  ["#sentence","#speakAll","#backspace","#clear"].forEach(s => $(s).style.display = show ? "" : "none");
+  ["#sentence","#speakAll"].forEach(s => $(s).style.display = show ? "" : "none");
+  ["#backspace","#clear"].forEach(s => $(s).style.display = show && board.settings.showClear ? "" : "none");
   $(".topbar").style.justifyContent = show ? "" : "flex-end";
 }
-function render(){ document.body.classList.toggle("editing", editing); renderSentence(); renderCore(); renderTabs(); renderGrid(); }
+function render(){ document.body.classList.toggle("editing", editing); fixCurCat(); renderSentence(); renderCore(); renderTabs(); renderGrid(); }
 
 function getSlot(where, idx){ return where==="core" ? board.core[idx] : board.cats[curCat].slots[idx]; }
 function setSlot(where, idx, val){ if (where==="core") board.core[idx]=val; else board.cats[curCat].slots[idx]=val; }
@@ -449,13 +507,58 @@ function onTileTap(e){
   if (editing) { openEditor(where, idx); return; }
   if (!t) return;
   if (e.target.closest("[data-sign]")) { openSign(t); return; }
-  btn.classList.add("pop"); setTimeout(()=>btn.classList.remove("pop"),120);
+  // Speaking is handled by the touch system below (hold, cooldown, palm rejection)
+}
+function activate(el){
+  const now = performance.now();
+  if (now - lastAct < board.settings.cooldown) return;
+  const t = getSlot(el.dataset.where, +el.dataset.idx); if (!t) return;
+  lastAct = now;
+  el.classList.add("pop"); setTimeout(()=>el.classList.remove("pop"),120);
   speakTile(t);
   if (board.settings.bar) { sentence.push(t); renderSentence(); }
 }
+/* Touch handling: palm rejection, hold-to-select, cooldown */
+let lastAct = -1e9, press = null, multi = false;
+const touches = new Set();
+function cancelPress(){ if (!press) return; clearTimeout(press.timer); press.el.classList.remove("holding"); press = null; }
+function isPalm(e){
+  if (!board.settings.palm || e.pointerType !== "touch") return false;
+  return multi || Math.max(e.width || 0, e.height || 0) > 60;
+}
+document.addEventListener("pointerdown", e => {
+  if (e.pointerType === "touch") { touches.add(e.pointerId); if (touches.size > 1 && board.settings.palm) { multi = true; cancelPress(); } }
+}, true);
+const lift = e => { touches.delete(e.pointerId); if (!touches.size) multi = false; };
+document.addEventListener("pointerup", lift, true);
+document.addEventListener("pointercancel", lift, true);
+document.addEventListener("pointerdown", e => {
+  if (editing) return;
+  const el = e.target.closest("#grid .tile, #core .tile");
+  if (!el || el.classList.contains("blank") || e.target.closest("[data-sign]") || isPalm(e)) return;
+  cancelPress();
+  press = { el, id: e.pointerId, x: e.clientX, y: e.clientY };
+  const hold = board.settings.hold;
+  if (hold > 0) {
+    el.style.setProperty("--hold", hold + "ms"); el.classList.add("holding");
+    press.timer = setTimeout(() => { const p = press; cancelPress(); if (p) activate(p.el); }, hold);
+  }
+});
+document.addEventListener("pointermove", e => {
+  if (!press || e.pointerId !== press.id) return;
+  if (multi || Math.hypot(e.clientX - press.x, e.clientY - press.y) > 18) cancelPress();
+});
+document.addEventListener("pointerup", e => {
+  if (!press || e.pointerId !== press.id) return;
+  const p = press; cancelPress();
+  if (board.settings.hold > 0 || multi) return;                 // released too early, or palm
+  const under = document.elementFromPoint(e.clientX, e.clientY);
+  if (under && under.closest(".tile") === p.el) activate(p.el);
+});
+document.addEventListener("pointercancel", e => { if (press && e.pointerId === press.id) cancelPress(); });
 $("#grid").addEventListener("click", onTileTap);
 $("#core").addEventListener("click", onTileTap);
-$("#tabs").addEventListener("click", e => { if (suppressClick) return; const b=e.target.closest(".tab"); if(!b) return; curCat=+b.dataset.cat; renderTabs(); renderGrid(); $(".gridwrap").scrollTop=0; });
+$("#tabs").addEventListener("click", e => { if (suppressClick) return; const b=e.target.closest(".tab"); if(!b) return; curCat=+b.dataset.cat; page=0; renderTabs(); renderGrid(); $(".gridwrap").scrollTop=0; });
 $("#speakAll").onclick = () => { if (sentence.length) tts(sentence.map(t=>t.say||t.label).join(" ")); };
 $("#backspace").onclick = () => { sentence.pop(); renderSentence(); };
 $("#clear").onclick = () => { sentence = []; renderSentence(); };
@@ -463,16 +566,16 @@ document.addEventListener("contextmenu", e => { if (!e.target.closest("input,tex
 
 /* Hold-to-unlock parent mode */
 (() => {
-  const lock = $("#lock"); let timer = null;
+  const lock = $("#lock"); let timer = null, justExited = false;
   const cancel = () => { clearTimeout(timer); timer=null; lock.classList.remove("holding"); };
   lock.addEventListener("pointerdown", e => {
     e.preventDefault();
-    if (editing) { editing=false; render(); toast("Parent mode off"); return; }
+    if (editing) { editing=false; justExited=true; render(); toast("Parent mode off"); return; }
     lock.classList.add("holding");
     timer = setTimeout(() => { cancel(); editing = true; render(); toast("Parent mode on"); }, 2000);
   });
   ["pointerup","pointerleave","pointercancel"].forEach(ev => lock.addEventListener(ev, cancel));
-  lock.addEventListener("click", () => { if (!editing && !timer) toast("Hold the lock for 2 seconds for parent mode"); });
+  lock.addEventListener("click", () => { if (justExited) { justExited = false; return; } if (!editing && !timer) toast("Hold the lock for 2 seconds for parent mode"); });
 })();
 
 
@@ -491,9 +594,10 @@ function startDrag(){
 function moveGhost(){ drag.ghost.style.transform = `translate(${drag.x - drag.offX}px, ${drag.y - drag.offY}px)`; }
 function endDrag(){
   if (!drag) return;
-  clearTimeout(drag.timer); clearInterval(drag.scroller);
+  clearTimeout(drag.timer); clearTimeout(drag.flip); clearInterval(drag.scroller);
   if (drag.ghost) drag.ghost.remove();
   drag.el.classList.remove("dragsrc");
+  document.querySelectorAll(".dragsrc").forEach(e => e.classList.remove("dragsrc"));
   document.querySelectorAll(".droptarget").forEach(e => e.classList.remove("droptarget"));
   document.body.classList.remove("dragging");
   drag = null;
@@ -504,8 +608,8 @@ function dropOn(t){
   if (t.classList.contains("tab")) {
     const ci = +t.dataset.cat, cat = board.cats[ci];
     if (ci === curCat && drag.where === "cat") return;
-    const j = cat.slots.indexOf(null);
-    if (j < 0) { toast(`${cat.name} is full`); return; }
+    let j = cat.slots.indexOf(null);
+    if (j < 0) { j = cat.slots.length; cat.slots.push(null); }
     cat.slots[j] = item; setSlot(drag.where, drag.idx, null);
     toast(`Moved “${item.label}” to ${cat.name}`);
   } else {
@@ -534,6 +638,9 @@ document.addEventListener("pointermove", e => {
   moveGhost();
   document.querySelectorAll(".droptarget").forEach(x => x.classList.remove("droptarget"));
   const under = document.elementFromPoint(drag.x, drag.y);
+  const arrow = under && under.closest("#pgPrev:not(:disabled), #pgNext:not(:disabled)");
+  if (arrow && !drag.flip) drag.flip = setTimeout(() => { drag && (drag.flip = null); goPage(arrow.id === "pgPrev" ? -1 : 1); }, 550);
+  if (!arrow && drag.flip) { clearTimeout(drag.flip); drag.flip = null; }
   const t = under && under.closest("#grid .tile, #core .tile, .tab");
   if (t && !t.classList.contains("dragsrc")) t.classList.add("droptarget");
   drag.over = t && !t.classList.contains("dragsrc") ? t : null;
@@ -750,6 +857,7 @@ function renderCatList(){
     <div class="catrow" data-i="${i}">
       <input class="em" value="${esc(c.emoji)}" data-f="emoji" maxlength="8">
       <input class="nm" value="${esc(c.name)}" data-f="name">
+      <button class="btn" data-a="hide" title="Show or hide for her">${c.hidden?"🙈":"👁️"}</button>
       <button class="btn" data-a="up" ${i===0?"disabled":""}>▲</button>
       <button class="btn" data-a="down" ${i===board.cats.length-1?"disabled":""}>▼</button>
       <button class="btn danger" data-a="del">✕</button>
@@ -762,6 +870,7 @@ $("#catList").addEventListener("input", e => {
 $("#catList").addEventListener("click", async e => {
   const b = e.target.closest("button"); if (!b) return;
   const i = +b.closest(".catrow").dataset.i, a = b.dataset.a, cats = board.cats;
+  if (a==="hide") cats[i].hidden = !cats[i].hidden;
   if (a==="up" && i>0) [cats[i-1],cats[i]]=[cats[i],cats[i-1]];
   if (a==="down" && i<cats.length-1) [cats[i+1],cats[i]]=[cats[i],cats[i+1]];
   if (a==="del") {
@@ -777,11 +886,24 @@ $("#openSettings").onclick = () => {
   const s = board.settings;
   $("#sCols").innerHTML = [3,4,5,6,7,8].map(n=>`<option ${n===s.cols?"selected":""}>${n}</option>`).join("");
   $("#sBar").value = s.bar ? "1" : "0";
+  $("#sFit").value = s.fit ? "1" : "0"; $("#rowsRow").style.display = s.fit ? "" : "none";
+  $("#sRows").innerHTML = [2,3,4,5,6].map(n=>`<option ${n===s.rows?"selected":""}>${n}</option>`).join("");
+  $("#sClear").value = s.showClear ? "1" : "0";
+  const ms = (v, off) => v ? (v/1000)+" sec" : off;
+  $("#sHold").innerHTML = [0,250,500,750,1000,1500].map(v=>`<option value="${v}" ${v===s.hold?"selected":""}>${ms(v,"Off (instant)")}</option>`).join("");
+  $("#sCool").innerHTML = [0,300,500,1000,1500,2000,3000].map(v=>`<option value="${v}" ${v===s.cooldown?"selected":""}>${ms(v,"Off")}</option>`).join("");
+  $("#sPalm").value = s.palm ? "1" : "0";
   $("#sRate").value = s.rate; $("#sRateV").textContent = (+s.rate).toFixed(2)+"×";
   loadVoices(); renderCatList();
   $("#setScrim").classList.add("open");
 };
-$("#sCols").onchange = e => { board.settings.cols = +e.target.value; save(); renderGrid(); };
+$("#sCols").onchange = e => { board.settings.cols = +e.target.value; page=0; save(); renderGrid(); };
+$("#sFit").onchange = e => { board.settings.fit = e.target.value==="1"; $("#rowsRow").style.display = board.settings.fit ? "" : "none"; page=0; save(); renderGrid(); };
+$("#sRows").onchange = e => { board.settings.rows = +e.target.value; page=0; save(); renderGrid(); };
+$("#sClear").onchange = e => { board.settings.showClear = e.target.value==="1"; save(); renderSentence(); };
+$("#sHold").onchange = e => { board.settings.hold = +e.target.value; save(); };
+$("#sCool").onchange = e => { board.settings.cooldown = +e.target.value; save(); };
+$("#sPalm").onchange = e => { board.settings.palm = e.target.value==="1"; save(); };
 $("#sBar").onchange = e => { board.settings.bar = e.target.value==="1"; sentence=[]; save(); renderSentence(); };
 $("#sRate").oninput = e => { board.settings.rate = +e.target.value; $("#sRateV").textContent = (+e.target.value).toFixed(2)+"×"; save(); };
 $("#sVoice").onchange = e => { board.settings.voice = e.target.value; save(); };
@@ -809,12 +931,12 @@ $("#importInput").onchange = async e => {
     if (data.app !== "talkboard" || !data.board) throw 0;
     if (!await confirmBox("Replace this board with the backup?")) return;
     for (const [k,d] of Object.entries(data.media||{})) await store.put("media", k, await dataURLToBlob(d));
-    board = data.board; curCat = 0; save(); $("#setScrim").classList.remove("open"); render(); toast("Backup restored");
+    board = data.board; board.settings = { ...DEFAULTS, ...board.settings }; curCat = 0; page = 0; save(); $("#setScrim").classList.remove("open"); render(); toast("Backup restored");
   } catch(_) { toast("That file isn't a TalkBoard backup"); }
 };
 $("#resetBtn").onclick = async () => {
   if (!await confirmBox("Erase all changes and go back to the starter board?")) return;
-  board = starter(); curCat = 0; save(); $("#setScrim").classList.remove("open"); render();
+  board = starter(); curCat = 0; page = 0; save(); $("#setScrim").classList.remove("open"); render();
 };
 
 /* ---------- Boot ---------- */
@@ -822,6 +944,7 @@ $("#resetBtn").onclick = async () => {
   await openDB();
   try { const saved = await store.get("kv","board"); board = saved ? JSON.parse(saved) : starter(); } catch(e){ board = starter(); }
   if (!board || !board.cats) board = starter();
+  board.settings = { ...DEFAULTS, ...board.settings };
   render(); loadVoices();
   if (!inFrame && "serviceWorker" in navigator) { try { navigator.serviceWorker.register("sw.js"); } catch(e){} }
   try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch(e){}
