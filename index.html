@@ -75,7 +75,10 @@
   .core .tile{aspect-ratio:auto}
   .tile:active,.tile.pop{transform:scale(.94)}
   .tile .pic{flex:1; width:100%; display:flex; align-items:center; justify-content:center; font-size:clamp(34px,6vw,64px); line-height:1; min-height:0}
-  .tile .pic img{width:100%; height:100%; object-fit:cover; border-radius:10px}
+  .tile .pic img{height:100%; width:auto; max-width:100%; aspect-ratio:1/1; object-fit:cover; border-radius:10px}
+  .cropbox{position:relative; width:300px; height:300px; margin:0 auto; overflow:hidden; border-radius:16px; background:#111; touch-action:none; cursor:grab}
+  .cropbox img{position:absolute; left:0; top:0; transform-origin:0 0; max-width:none; user-select:none; -webkit-user-drag:none; pointer-events:none}
+  .cropbox::after{content:""; position:absolute; inset:0; border:3px solid rgba(255,255,255,.9); border-radius:16px; pointer-events:none}
   .tile .pic.big{font-size:clamp(40px,7vw,72px); font-weight:800}
   .tile .lbl{font-size:clamp(14px,1.9vw,20px); font-weight:700; margin-top:4px; text-align:center; line-height:1.1; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .tile.blank{visibility:hidden}
@@ -168,6 +171,7 @@
     <h3>Picture</h3>
     <div class="row">
       <button class="btn" id="pickPhoto">📷 Choose / take photo</button>
+      <button class="btn" id="recropPhoto">✂️ Adjust crop</button>
       <button class="btn" id="removePhoto">Remove photo</button>
       <input type="file" id="photoInput" accept="image/*" hidden>
     </div>
@@ -219,6 +223,17 @@
       <button class="btn" id="cancelEdit">Cancel</button>
       <button class="btn primary" id="saveEdit">Save</button>
     </div>
+  </div>
+</div>
+
+<!-- Photo cropper -->
+<div class="scrim" id="cropScrim">
+  <div class="modal" style="width:min(420px,100%)">
+    <h2>Frame the photo</h2>
+    <p class="hint">Drag the photo to move it. Use the slider (or pinch) to zoom. What's inside the box is what she'll see.</p>
+    <div class="cropbox" id="cropBox"><img id="cropImg" alt=""></div>
+    <div class="row"><label style="min-width:auto">Zoom</label><input type="range" id="cropZoom" min="1" max="5" step="0.01" value="1" style="flex:1"></div>
+    <div class="actions"><button class="btn" id="cropCancel">Cancel</button><button class="btn primary" id="cropOk">Use photo</button></div>
   </div>
 </div>
 
@@ -750,27 +765,86 @@ function updateMediaState(){
   $("#playAudio").style.display = $("#removeAudio").style.display = ed.t.audio ? "" : "none";
   $("#removeVideo").style.display = ed.t.video ? "" : "none";
   $("#removePhoto").style.display = ed.t.img ? "" : "none";
+  $("#recropPhoto").style.display = ed.t.img && ed.t.imgSrc ? "" : "none";
   $("#videoState").textContent = ed.t.video ? "✓ Using your own video (works offline). The YouTube link is ignored while this is set." : "Tip: a 3–5 second clip of you signing works offline and has no ads.";
 }
-function resizeImage(file){
-  return new Promise((res,rej) => {
-    const img = new Image(), url = URL.createObjectURL(file);
-    img.onload = () => {
-      const S = 360, c = document.createElement("canvas"); c.width = c.height = S;
-      const s = Math.min(img.width, img.height), sx = (img.width-s)/2, sy = (img.height-s)/2;
-      c.getContext("2d").drawImage(img, sx, sy, s, s, 0, 0, S, S);
-      URL.revokeObjectURL(url); res(c.toDataURL("image/jpeg", 0.85));
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); rej(); };
-    img.src = url;
-  });
+/* Photos: keep a downsized original (so the crop can be adjusted later) and a 360px square crop */
+function loadImage(src){ return new Promise((res,rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; }); }
+async function shrinkOriginal(file){
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await loadImage(url), M = 1400, k = Math.min(1, M / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement("canvas"); c.width = Math.round(img.naturalWidth*k); c.height = Math.round(img.naturalHeight*k);
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    return await new Promise(r => c.toBlob(r, "image/jpeg", 0.88));
+  } finally { URL.revokeObjectURL(url); }
 }
+const BOX = 300;
+let crop = null; // { img, base, zoom, x, y, resolve }
+function cropLayout(){
+  const c = crop, sc = c.base * c.zoom, w = c.img.naturalWidth*sc, h = c.img.naturalHeight*sc;
+  c.x = Math.min(0, Math.max(BOX - w, c.x)); c.y = Math.min(0, Math.max(BOX - h, c.y));
+  $("#cropImg").style.transform = `translate(${c.x}px, ${c.y}px) scale(${sc})`;
+}
+function setZoom(z, cx = BOX/2, cy = BOX/2){
+  const c = crop, old = c.base*c.zoom; z = Math.max(1, Math.min(5, z)); const nw = c.base*z;
+  c.x = cx - (cx - c.x) * nw/old; c.y = cy - (cy - c.y) * nw/old; c.zoom = z;
+  $("#cropZoom").value = z; cropLayout();
+}
+async function openCropper(blob){
+  const url = URL.createObjectURL(blob), img = await loadImage(url);
+  const el = $("#cropImg"); el.src = url; el.style.width = img.naturalWidth+"px"; el.style.height = img.naturalHeight+"px";
+  const base = Math.max(BOX/img.naturalWidth, BOX/img.naturalHeight);
+  crop = { img, url, base, zoom:1, x:(BOX - img.naturalWidth*base)/2, y:(BOX - img.naturalHeight*base)/2 };
+  $("#cropZoom").value = 1; cropLayout();
+  $("#cropScrim").classList.add("open");
+  return new Promise(r => crop.resolve = r);
+}
+function closeCropper(result){
+  $("#cropScrim").classList.remove("open");
+  const c = crop; crop = null; URL.revokeObjectURL(c.url); c.resolve(result);
+}
+$("#cropZoom").oninput = e => setZoom(+e.target.value);
+$("#cropCancel").onclick = () => closeCropper(null);
+$("#cropOk").onclick = () => {
+  const c = crop, sc = c.base*c.zoom, S = 360, cv = document.createElement("canvas"); cv.width = cv.height = S;
+  cv.getContext("2d").drawImage(c.img, -c.x/sc, -c.y/sc, BOX/sc, BOX/sc, 0, 0, S, S);
+  closeCropper(cv.toDataURL("image/jpeg", 0.86));
+};
+(() => { // drag to pan, pinch / wheel to zoom
+  const box = $("#cropBox"), pts = new Map(); let pinch = null;
+  box.addEventListener("pointerdown", e => { box.setPointerCapture(e.pointerId); pts.set(e.pointerId, {x:e.clientX, y:e.clientY}); });
+  box.addEventListener("pointermove", e => {
+    if (!crop || !pts.has(e.pointerId)) return;
+    const prev = pts.get(e.pointerId); pts.set(e.pointerId, {x:e.clientX, y:e.clientY});
+    if (pts.size === 1) { crop.x += e.clientX - prev.x; crop.y += e.clientY - prev.y; cropLayout(); }
+    else if (pts.size === 2) {
+      const [a,b] = [...pts.values()], d = Math.hypot(a.x-b.x, a.y-b.y), r = box.getBoundingClientRect();
+      if (pinch) setZoom(crop.zoom * d / pinch, (a.x+b.x)/2 - r.left, (a.y+b.y)/2 - r.top);
+      pinch = d;
+    }
+  });
+  const up = e => { pts.delete(e.pointerId); if (pts.size < 2) pinch = null; };
+  box.addEventListener("pointerup", up); box.addEventListener("pointercancel", up);
+  box.addEventListener("wheel", e => { if (!crop) return; e.preventDefault(); const r = box.getBoundingClientRect(); setZoom(crop.zoom * (e.deltaY < 0 ? 1.1 : 0.9), e.clientX - r.left, e.clientY - r.top); }, { passive:false });
+})();
 $("#pickPhoto").onclick = () => $("#photoInput").click();
 $("#photoInput").onchange = async e => {
   const f = e.target.files[0]; e.target.value = ""; if (!f) return;
-  try { ed.t.img = await resizeImage(f); updatePreview(); updateMediaState(); } catch(_) { toast("Couldn't read that image"); }
+  try {
+    const orig = await shrinkOriginal(f);
+    const cropped = await openCropper(orig);
+    if (!cropped) return;
+    attachMedia("imgSrc", orig); ed.t.img = cropped; updatePreview(); updateMediaState();
+  } catch(_) { toast("Couldn't read that image"); }
 };
-$("#removePhoto").onclick = () => { ed.t.img = undefined; updatePreview(); updateMediaState(); };
+$("#recropPhoto").onclick = async () => {
+  const blob = ed.pending[ed.t.imgSrc] || await store.get("media", ed.t.imgSrc);
+  if (!blob) { toast("Original photo not found. Choose the photo again."); return; }
+  const cropped = await openCropper(blob);
+  if (cropped) { ed.t.img = cropped; updatePreview(); updateMediaState(); }
+};
+$("#removePhoto").onclick = () => { if (ed.t.imgSrc) ed.removed.push(ed.t.imgSrc); ed.t.img = undefined; ed.t.imgSrc = undefined; updatePreview(); updateMediaState(); };
 
 function attachMedia(kind, blob){
   const key = uid();
@@ -840,7 +914,7 @@ $("#cancelEdit").onclick = async () => { await cleanupMedia(Object.keys(ed.pendi
 $("#deleteTile").onclick = async () => {
   if (!await confirmBox(`Delete “${ed.t.label}”?`)) return;
   const old = getSlot(ed.where, ed.idx);
-  await cleanupMedia([old?.audio, old?.video, ...Object.keys(ed.pending)].filter(Boolean));
+  await cleanupMedia([old?.audio, old?.video, old?.imgSrc, ...Object.keys(ed.pending)].filter(Boolean));
   setSlot(ed.where, ed.idx, null); save(); closeEditor(); render();
 };
 function closeEditor(){ $("#editScrim").classList.remove("open"); ed = null; }
@@ -876,7 +950,7 @@ $("#catList").addEventListener("click", async e => {
   if (a==="del") {
     if (cats.length===1) { toast("Keep at least one category"); return; }
     if (!await confirmBox(`Delete the “${cats[i].name}” category and its pictures?`)) return;
-    await cleanupMedia(cats[i].slots.flatMap(t => t ? [t.audio,t.video] : []).filter(Boolean));
+    await cleanupMedia(cats[i].slots.flatMap(t => t ? [t.audio,t.video,t.imgSrc] : []).filter(Boolean));
     cats.splice(i,1);
   }
   curCat = Math.min(curCat, cats.length-1); save(); renderCatList(); render();
@@ -916,7 +990,7 @@ async function dataURLToBlob(d){ return (await fetch(d)).blob(); }
 function allTiles(){ return [...board.core, ...board.cats.flatMap(c=>c.slots)].filter(Boolean); }
 $("#exportBtn").onclick = async () => {
   const media = {};
-  for (const t of allTiles()) for (const k of [t.audio,t.video]) if (k && !media[k]) { const b = await store.get("media",k); if (b) media[k] = await blobToDataURL(b); }
+  for (const t of allTiles()) for (const k of [t.audio,t.video,t.imgSrc]) if (k && !media[k]) { const b = await store.get("media",k); if (b) media[k] = await blobToDataURL(b); }
   const blob = new Blob([JSON.stringify({ app:"talkboard", v:1, board, media })], { type:"application/json" });
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
   a.download = `talkboard-backup-${new Date().toISOString().slice(0,10)}.json`;

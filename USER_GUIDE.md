@@ -99,7 +99,8 @@ Tap a picture or a **+** in parent mode to open the editor.
 - **Emoji**: a quick placeholder picture. Tap the box, then tap the 😊 key on the keyboard and use its search bar (type "pizza", "dog", and so on).
 
 **Picture**
-- **📷 Choose / take photo**: use a photo from the gallery or take one with the camera. It's cropped to a square automatically.
+- **📷 Choose / take photo**: use a photo from the gallery or take one with the camera. A **Frame the photo** box opens. Drag the photo to move it, and use the slider or pinch to zoom, until the face or object fills the square. Then tap **Use photo**.
+- **✂️ Adjust crop**: re-frame a photo later without picking it again. This works for photos added after this feature was added; for older ones, choose the photo again.
 - **Remove photo**: goes back to the emoji (or the plain word if there's no emoji).
 - Real photos (her cup, her grandma, her favorite toy) are usually easier for a young child to recognize than emoji.
 
