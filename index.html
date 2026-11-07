@@ -85,7 +85,7 @@
   .row label{min-width:110px; font-weight:600; font-size:15px}
   .row input[type=text], .row input[type=number], .row select{flex:1; min-width:120px; font:inherit; font-size:17px; padding:10px 12px; border:1px solid var(--line); border-radius:10px}
   .row input.short{flex:none; width:90px; min-width:0}
-  .btn{border:0; border-radius:10px; padding:10px 16px; font-weight:600; background:#EEF1F5}
+  .btn{border:0; text-decoration:none; display:inline-block; border-radius:10px; padding:10px 16px; font-weight:600; background:#EEF1F5}
   .btn.primary{background:var(--accent); color:#fff}
   .btn.danger{background:#FCE8E4; color:var(--danger)}
   .btn:active{filter:brightness(.95)}
@@ -139,7 +139,7 @@
       <div class="preview" id="editPreview"></div>
       <div style="flex:1; min-width:220px">
         <div class="row"><label>Word</label><input type="text" id="fLabel" placeholder="e.g. Mom"></div>
-        <div class="row"><label>Says</label><input type="text" id="fSay" placeholder="Same as word if blank"></div>
+        <div class="row"><label>Says</label><input type="text" id="fSay" placeholder="Same as word if blank"><button class="btn" id="testSay" aria-label="Hear it">🔊</button></div>
         <div class="row"><label>Emoji</label><input type="text" id="fEmoji" class="short" maxlength="8" placeholder="🙂"></div>
       </div>
     </div>
@@ -166,6 +166,11 @@
     <p class="hint" id="audioState">Uses the tablet's voice unless you record one.</p>
 
     <h3>ASL sign video (optional)</h3>
+    <div class="row">
+      <a class="btn" id="findYT" target="_blank" rel="noopener">🔎 Search YouTube</a>
+      <a class="btn" id="findLP" target="_blank" rel="noopener">📘 Lifeprint dictionary</a>
+    </div>
+    <p class="hint">Find a clip, tap Share → Copy link, and paste it below. YouTube's "Start at" share option fills in the start time for you.</p>
     <div class="row"><label>YouTube link</label><input type="text" id="fYT" placeholder="https://youtu.be/…"></div>
     <div class="row"><label>Start / end</label>
       <input type="text" id="fStart" class="short" placeholder="0:00"> to
@@ -355,7 +360,7 @@ let voices = [];
 function loadVoices(){ try { voices = speechSynthesis.getVoices() || []; } catch(e){ voices=[]; } fillVoiceSelect(); }
 try { speechSynthesis.onvoiceschanged = loadVoices; } catch(e){}
 // Some voices read a lone capital letter as "capital I", so speak single letters by name.
-const LETTER_NAMES = {a:"ay",b:"bee",c:"see",d:"dee",e:"ee",f:"eff",g:"jee",h:"aitch",i:"eye",j:"jay",k:"kay",l:"ell",m:"em",n:"en",o:"oh",p:"pee",q:"cue",r:"are",s:"ess",t:"tee",u:"you",v:"vee",w:"double you",x:"ex",y:"why",z:"zee"};
+const LETTER_NAMES = {a:"ay",b:"bee",c:"see",d:"dee",e:"ee",f:"eff",g:"gee",h:"aitch",i:"eye",j:"jay",k:"kay",l:"ell",m:"em",n:"en",o:"oh",p:"pee",q:"cue",r:"are",s:"ess",t:"tee",u:"you",v:"vee",w:"double you",x:"ex",y:"why",z:"zee"};
 function speakable(text){
   const t = String(text).trim();
   if (/^[A-Za-z]$/.test(t)) return LETTER_NAMES[t.toLowerCase()];
@@ -520,7 +525,7 @@ function openEditor(where, idx){
   $("#fYT").value = t.yt || ""; $("#fStart").value = fmtTime(t.start); $("#fEnd").value = fmtTime(t.end);
   $("#deleteTile").style.display = existing ? "" : "none";
   $("#moveLeft").parentElement.style.display = existing ? "" : "none";
-  renderSwatches(); updatePreview(); updateMediaState();
+  renderSwatches(); updatePreview(); updateMediaState(); updateFindLinks();
   $("#editScrim").classList.add("open");
   setTimeout(()=>{ if(!existing) $("#fLabel").focus(); }, 50);
 }
@@ -539,7 +544,14 @@ function updatePreview(){
   readDraft();
   $("#editPreview").innerHTML = tileHTML(ed.t.label||ed.t.emoji||ed.t.img ? {...ed.t, yt:null, video:null, label: ed.t.label||"…"} : null, "x", 0).replace('class="tile blank"','class="tile"');
 }
-["#fLabel","#fEmoji"].forEach(s => $(s).addEventListener("input", updatePreview));
+["#fLabel","#fEmoji"].forEach(s => $(s).addEventListener("input", () => { updatePreview(); updateFindLinks(); }));
+function updateFindLinks(){
+  const w = ($("#fLabel").value.trim() || "").toLowerCase();
+  $("#findYT").href = "https://www.youtube.com/results?search_query=" + encodeURIComponent("ASL sign " + w);
+  const slug = w.replace(/[^a-z]/g, "");
+  $("#findLP").href = slug ? `https://www.lifeprint.com/asl101/pages-signs/${slug[0]}/${slug}.htm` : "https://www.lifeprint.com/";
+}
+$("#testSay").onclick = () => { const t = $("#fSay").value.trim() || $("#fLabel").value.trim(); if (t) tts(t); };
 function updateMediaState(){
   $("#audioState").textContent = ed.t.audio ? "✓ Using a recorded voice for this word." : "Uses the tablet's voice unless you record one.";
   $("#playAudio").style.display = $("#removeAudio").style.display = ed.t.audio ? "" : "none";
