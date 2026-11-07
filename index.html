@@ -406,16 +406,18 @@ let voices = [];
 function loadVoices(){ try { voices = speechSynthesis.getVoices() || []; } catch(e){ voices=[]; } fillVoiceSelect(); }
 try { speechSynthesis.onvoiceschanged = loadVoices; } catch(e){}
 // Some voices read a lone capital letter as "capital I", so speak single letters by name.
-const LETTER_NAMES = {a:"ay",b:"bee",c:"see",d:"dee",e:"ee",f:"eff",g:"gee",h:"aitch",i:"eye",j:"jay",k:"kay",l:"ell",m:"em",n:"en",o:"oh",p:"pee",q:"cue",r:"are",s:"ess",t:"tee",u:"you",v:"vee",w:"double you",x:"ex",y:"why",z:"zee"};
+const LETTER_NAMES = {a:"ay",b:"bee",c:"see",d:"dee",e:"e",f:"eff",g:"gee",h:"aitch",i:"eye",j:"jay",k:"kay",l:"ell",m:"em",n:"en",o:"oh",p:"pee",q:"cue",r:"are",s:"ess",t:"tee",u:"you",v:"vee",w:"double you",x:"ex",y:"why",z:"zee"};
 function speakable(text){
   const t = String(text).trim();
   if (/^[A-Za-z]$/.test(t)) return LETTER_NAMES[t.toLowerCase()];
   return t;
 }
+// What to say for a picture: custom "Says" text exactly as typed, otherwise the word (letters spoken by name)
+const sayText = t => t.say ? t.say : speakable(t.label);
 function tts(text){
   try {
     speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(speakable(text));
+    const u = new SpeechSynthesisUtterance(text);
     u.rate = board.settings.rate || 0.9;
     const v = voices.find(v => v.voiceURI === board.settings.voice);
     if (v) u.voice = v; else u.lang = "en-US";
@@ -427,9 +429,9 @@ async function speakTile(t){
   if (curAudio) { curAudio.pause(); curAudio = null; }
   if (t.audio) {
     const url = await mediaURL(t.audio);
-    if (url) { try { speechSynthesis.cancel(); } catch(e){} curAudio = new Audio(url); curAudio.play().catch(()=>tts(t.say||t.label)); return; }
+    if (url) { try { speechSynthesis.cancel(); } catch(e){} curAudio = new Audio(url); curAudio.play().catch(()=>tts(sayText(t))); return; }
   }
-  tts(t.say || t.label);
+  tts(sayText(t));
 }
 
 /* ---------- Rendering ---------- */
@@ -574,7 +576,7 @@ document.addEventListener("pointercancel", e => { if (press && e.pointerId === p
 $("#grid").addEventListener("click", onTileTap);
 $("#core").addEventListener("click", onTileTap);
 $("#tabs").addEventListener("click", e => { if (suppressClick) return; const b=e.target.closest(".tab"); if(!b) return; curCat=+b.dataset.cat; page=0; renderTabs(); renderGrid(); $(".gridwrap").scrollTop=0; });
-$("#speakAll").onclick = () => { if (sentence.length) tts(sentence.map(t=>t.say||t.label).join(" ")); };
+$("#speakAll").onclick = () => { if (sentence.length) tts(sentence.map(sayText).join(" ")); };
 $("#backspace").onclick = () => { sentence.pop(); renderSentence(); };
 $("#clear").onclick = () => { sentence = []; renderSentence(); };
 document.addEventListener("contextmenu", e => { if (!e.target.closest("input,textarea")) e.preventDefault(); });
@@ -759,7 +761,7 @@ function updateFindLinks(){
   const slug = w.replace(/[^a-z]/g, "");
   $("#findLP").href = slug ? `https://www.lifeprint.com/asl101/pages-signs/${slug[0]}/${slug}.htm` : "https://www.lifeprint.com/";
 }
-$("#testSay").onclick = () => { const t = $("#fSay").value.trim() || $("#fLabel").value.trim(); if (t) tts(t); };
+$("#testSay").onclick = () => { const say = $("#fSay").value.trim(), w = $("#fLabel").value.trim(); if (say) tts(say); else if (w) tts(speakable(w)); };
 function updateMediaState(){
   $("#audioState").textContent = ed.t.audio ? "✓ Using a recorded voice for this word." : "Uses the tablet's voice unless you record one.";
   $("#playAudio").style.display = $("#removeAudio").style.display = ed.t.audio ? "" : "none";
