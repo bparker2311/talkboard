@@ -1007,7 +1007,8 @@ $("#importInput").onchange = async e => {
     if (data.app !== "talkboard" || !data.board) throw 0;
     if (!await confirmBox("Replace this board with the backup?")) return;
     for (const [k,d] of Object.entries(data.media||{})) await store.put("media", k, await dataURLToBlob(d));
-    board = data.board; board.settings = { ...DEFAULTS, ...board.settings }; curCat = 0; page = 0; save(); $("#setScrim").classList.remove("open"); render(); toast("Backup restored");
+    const myVoice = board.settings.voice;                  // voices differ per device: keep this device's choice
+    board = data.board; board.settings = { ...DEFAULTS, ...board.settings, voice: myVoice }; curCat = 0; page = 0; save(); $("#setScrim").classList.remove("open"); render(); toast("Backup restored");
   } catch(_) { toast("That file isn't a TalkBoard backup"); }
 };
 $("#resetBtn").onclick = async () => {

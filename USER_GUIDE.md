@@ -207,7 +207,7 @@ Each category has:
 **Everything you add (photos, recordings, videos, layout) is stored only on this tablet.** Uninstalling the app, clearing Chrome's data, or losing the tablet erases it.
 
 - **⬇ Save backup file**: saves a backup to the tablet's **Downloads** folder. Copy it to Google Drive or email it to yourself.
-- **⬆ Restore from backup**: loads a backup file and replaces the current board.
+- **⬆ Restore from backup**: loads a backup file and replaces the current board. The voice choice is the one setting that isn't copied, because voices differ between devices. Each device keeps its own.
 - **Reset to starter board**: erases everything and starts over with the original pictures.
 
 Save a backup after any big round of changes.
