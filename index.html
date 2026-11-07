@@ -88,6 +88,7 @@
   .sign{position:absolute; top:4px; right:4px; width:44px; height:44px; border-radius:50%; border:0;
     background:rgba(255,255,255,.92); box-shadow:0 1px 3px rgba(0,0,0,.25); font-size:22px; display:flex; align-items:center; justify-content:center}
   .core .sign{width:34px; height:34px; font-size:17px}
+  .sign.off{opacity:.3; filter:grayscale(1); box-shadow:none}
 
   .editbanner{display:none; background:#FFF4DE; color:#7A4B00; padding:8px 12px; font-size:15px; align-items:center; gap:10px}
   body.editing .editbanner{display:flex}
@@ -442,10 +443,11 @@ function tileHTML(t, where, idx){
   else if (t.emoji) pic = `<div class="pic">${esc(t.emoji)}</div>`;
   else pic = `<div class="pic big">${esc(t.label)}</div>`;
   const hasSign = t.yt || t.video;
+  const signOff = !t.video && !navigator.onLine;            // YouTube needs internet
   const showLbl = t.img || t.emoji;
   return `<button class="tile" style="--bg-tile:${esc(t.color||"#fff")}" data-where="${where}" data-idx="${idx}">
     ${pic}${showLbl ? `<div class="lbl">${esc(t.label)}</div>` : ""}
-    ${hasSign && !editing ? `<span class="sign" role="button" aria-label="Show sign" data-sign="1">🤟</span>` : ""}
+    ${hasSign && !editing ? `<span class="sign${signOff ? " off" : ""}" role="button" aria-label="Show sign" data-sign="1">🤟</span>` : ""}
   </button>`;
 }
 function renderCore(){
@@ -523,7 +525,10 @@ function onTileTap(e){
   if (suppressClick) return;
   if (editing) { openEditor(where, idx); return; }
   if (!t) return;
-  if (e.target.closest("[data-sign]")) { openSign(t); return; }
+  if (e.target.closest("[data-sign]")) {
+    if (!t.video && !navigator.onLine) { toast("This sign video needs internet"); return; }
+    openSign(t); return;
+  }
   // Speaking is handled by the touch system below (hold, cooldown, palm rejection)
 }
 function activate(el){
@@ -702,6 +707,7 @@ async function playSign(){
     if (url) { const v=document.createElement("video"); v.src=url; v.autoplay=true; v.muted=true; v.loop=true; v.playsInline=true; v.controls=false; box.appendChild(v); v.play().catch(()=>{}); return; }
   }
   const y = ytInfo(t.yt);
+  if (y && !navigator.onLine) { box.innerHTML = `<div style="color:#fff;padding:40px;font-size:20px">This video needs internet</div>`; return; }
   if (!y) { box.innerHTML = `<div style="color:#fff;padding:40px">No video yet</div>`; return; }
   const start = t.start ?? y.t ?? 0;
   const p = new URLSearchParams({ autoplay:"1", mute:"1", rel:"0", modestbranding:"1", playsinline:"1", controls:"0", fs:"0", iv_load_policy:"3", start:String(start) });
@@ -1015,6 +1021,11 @@ $("#resetBtn").onclick = async () => {
   if (!await confirmBox("Erase all changes and go back to the starter board?")) return;
   board = starter(); curCat = 0; page = 0; save(); $("#setScrim").classList.remove("open"); render();
 };
+
+/* Dim YouTube sign badges while offline */
+const refreshSigns = () => { if (board) { renderCore(); renderGrid(); } };
+window.addEventListener("online", refreshSigns);
+window.addEventListener("offline", refreshSigns);
 
 /* ---------- Boot ---------- */
 (async () => {

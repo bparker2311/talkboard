@@ -152,7 +152,7 @@ Any picture can show a sign video when the 🤟 badge is tapped.
 5. Optionally fill in **Start / end** (seconds like `12`, or minutes:seconds like `0:12`) so only the sign plays.
 6. Tap **Preview sign** to check it, then **Save**.
 
-YouTube videos need internet, and a video can disappear if its owner removes it. The video plays muted and without suggested videos, but YouTube's logo still appears. App pinning keeps her from leaving the app through it.
+YouTube videos need internet, and a video can disappear if its owner removes it. When the tablet is offline, the 🤟 badge on YouTube-only words turns gray and does nothing, so she doesn't hit a blank screen. Words with your own videos keep working. The video plays muted and without suggested videos, but YouTube's logo still appears. App pinning keeps her from leaving the app through it.
 
 **Using your own video**
 Tap **🎬 Use my own video instead** and pick a clip from the tablet. A 3 to 5 second clip of you or a family member signing works best. It works offline, has no ads, and shows a familiar face. Your own video takes priority over a YouTube link.
