@@ -2,6 +2,10 @@
 
 A picture-communication (AAC) board for a tablet. Tap a picture to hear the word; tap 🤟 for an ASL video.
 
+**📖 Full instructions for parents and caregivers: [USER_GUIDE.md](USER_GUIDE.md)**
+
+The rest of this file covers deploying and developing the app.
+
 ## Deploy
 Static files, no build step. In this folder:
     npx vercel --prod
