@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#2B3A55">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<title>TalkBoard</title>
+<style>
+  :root{
+    --ink:#1F2733; --muted:#6B7280; --line:#E3E6EB; --bar:#2B3A55; --bg:#F4F5F7;
+    --accent:#2F6FEB; --danger:#C2412D; --radius:16px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{margin:0; height:100%; background:var(--bg); color:var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    user-select:none; -webkit-user-select:none; touch-action:manipulation; overscroll-behavior:none}
+  button{font:inherit; color:inherit; cursor:pointer; touch-action:manipulation}
+  #app{display:flex; flex-direction:column; height:100%}
+
+  /* Sentence bar */
+  .topbar{display:flex; gap:8px; align-items:stretch; padding:8px; background:var(--bar)}
+  .sentence{flex:1; display:flex; gap:6px; align-items:center; overflow-x:auto; background:#fff;
+    border-radius:12px; padding:6px 8px; min-height:64px}
+  .sentence:empty::before{content:"Tap pictures to build a sentence"; color:#9AA3AF; font-size:15px; padding-left:4px}
+  .chip{display:flex; align-items:center; gap:4px; background:var(--bg); border-radius:10px; padding:4px 10px;
+    font-size:20px; font-weight:600; white-space:nowrap; flex:none}
+  .chip img{width:34px; height:34px; object-fit:cover; border-radius:6px}
+  .barbtn{flex:none; width:64px; border:0; border-radius:12px; background:#3D4F72; color:#fff; font-size:26px;
+    display:flex; align-items:center; justify-content:center; position:relative}
+  .barbtn.speak{background:#2E9E5B; width:84px}
+  .barbtn:active{filter:brightness(1.2)}
+  .lock svg{position:absolute; inset:4px; width:calc(100% - 8px); height:calc(100% - 8px); pointer-events:none}
+  .lock circle{fill:none; stroke:#fff; stroke-width:4; stroke-dasharray:170; stroke-dashoffset:170; transition:none}
+  .lock.holding circle{stroke-dashoffset:0; transition:stroke-dashoffset 2s linear}
+  body.editing .lock{background:#E8A33D}
+
+  /* Core strip */
+  .core{display:grid; gap:6px; padding:8px; background:#E6E9EF; grid-auto-flow:column; grid-auto-columns:1fr; overflow-x:auto}
+  .core .tile{min-height:76px}
+  .core .tile .pic{font-size:30px}
+  .core .tile .lbl{font-size:15px}
+
+  /* Tabs */
+  .tabs{display:flex; gap:6px; padding:8px 8px 0; overflow-x:auto; background:var(--bg); flex:none}
+  .tab{flex:none; border:0; background:#fff; border-radius:12px 12px 0 0; padding:10px 16px; font-size:17px; font-weight:600;
+    display:flex; gap:8px; align-items:center; border-bottom:4px solid transparent; color:var(--muted)}
+  .tab .e{font-size:24px}
+  .tab.on{color:var(--ink); border-bottom-color:var(--accent); background:#fff; box-shadow:0 -2px 6px rgba(0,0,0,.05)}
+
+  /* Grid */
+  .gridwrap{flex:1; overflow-y:auto; padding:10px; background:#fff}
+  .grid{display:grid; gap:10px}
+  .tile{position:relative; border:0; border-radius:var(--radius); background:var(--bg-tile,#fff);
+    box-shadow:0 1px 2px rgba(0,0,0,.12), inset 0 0 0 2px rgba(0,0,0,.06);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; padding:6px; aspect-ratio:1/1;
+    overflow:hidden; transition:transform .08s}
+  .core .tile{aspect-ratio:auto}
+  .tile:active,.tile.pop{transform:scale(.94)}
+  .tile .pic{flex:1; width:100%; display:flex; align-items:center; justify-content:center; font-size:clamp(34px,6vw,64px); line-height:1; min-height:0}
+  .tile .pic img{width:100%; height:100%; object-fit:cover; border-radius:10px}
+  .tile .pic.big{font-size:clamp(40px,7vw,72px); font-weight:800}
+  .tile .lbl{font-size:clamp(14px,1.9vw,20px); font-weight:700; margin-top:4px; text-align:center; line-height:1.1; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .tile.blank{visibility:hidden}
+  body.editing .tile.blank{visibility:visible; background:transparent; box-shadow:inset 0 0 0 2px #CBD2DC; color:#9AA3AF}
+  body.editing .tile.blank .pic{font-size:40px}
+  body.editing .tile:not(.blank)::after{content:"✎"; position:absolute; top:6px; left:8px; font-size:18px; color:#555}
+  .sign{position:absolute; top:4px; right:4px; width:44px; height:44px; border-radius:50%; border:0;
+    background:rgba(255,255,255,.92); box-shadow:0 1px 3px rgba(0,0,0,.25); font-size:22px; display:flex; align-items:center; justify-content:center}
+  .core .sign{width:34px; height:34px; font-size:17px}
+
+  .editbanner{display:none; background:#FFF4DE; color:#7A4B00; padding:8px 12px; font-size:15px; align-items:center; gap:10px}
+  body.editing .editbanner{display:flex}
+  .editbanner .sp{flex:1}
+  .editbanner button{border:0; background:#fff; border-radius:8px; padding:8px 12px; font-weight:600; box-shadow:0 1px 2px rgba(0,0,0,.15)}
+
+  /* Modals */
+  .scrim{position:fixed; inset:0; background:rgba(15,20,30,.55); display:none; align-items:center; justify-content:center; z-index:50; padding:16px}
+  .scrim.open{display:flex}
+  .modal{background:#fff; border-radius:20px; width:min(640px,100%); max-height:100%; overflow:auto; padding:20px; user-select:text; -webkit-user-select:text}
+  .modal h2{margin:0 0 12px; font-size:22px}
+  .modal h3{margin:18px 0 8px; font-size:16px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em}
+  .row{display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:8px 0}
+  .row label{min-width:110px; font-weight:600; font-size:15px}
+  .row input[type=text], .row input[type=number], .row select{flex:1; min-width:120px; font:inherit; font-size:17px; padding:10px 12px; border:1px solid var(--line); border-radius:10px}
+  .row input.short{flex:none; width:90px; min-width:0}
+  .btn{border:0; border-radius:10px; padding:10px 16px; font-weight:600; background:#EEF1F5}
+  .btn.primary{background:var(--accent); color:#fff}
+  .btn.danger{background:#FCE8E4; color:var(--danger)}
+  .btn:active{filter:brightness(.95)}
+  .hint{font-size:13px; color:var(--muted); margin:4px 0}
+  .swatches{display:flex; gap:8px; flex-wrap:wrap}
+  .sw{width:38px; height:38px; border-radius:10px; border:2px solid rgba(0,0,0,.1)}
+  .sw.on{outline:3px solid var(--accent); outline-offset:2px}
+  .preview{width:110px; height:110px; flex:none}
+  .actions{display:flex; gap:10px; justify-content:flex-end; margin-top:18px; flex-wrap:wrap}
+  .actions .sp{flex:1}
+  .catrow{display:flex; gap:8px; align-items:center; margin:6px 0}
+  .catrow input{font:inherit; padding:8px 10px; border:1px solid var(--line); border-radius:8px}
+  .catrow input.em{width:60px; text-align:center; font-size:20px}
+  .catrow input.nm{flex:1; min-width:0}
+  .catrow .btn{padding:8px 10px}
+
+  /* Sign viewer */
+  .signview{width:min(820px,100%); text-align:center}
+  .signview .word{font-size:34px; font-weight:800; margin:0 0 10px}
+  .vid{position:relative; width:100%; aspect-ratio:16/9; background:#111; border-radius:14px; overflow:hidden}
+  .vid iframe,.vid video{position:absolute; inset:0; width:100%; height:100%; border:0}
+  .signview .actions{justify-content:center}
+  .signview .btn{font-size:20px; padding:14px 26px}
+  .toast{position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:#222; color:#fff; padding:10px 16px; border-radius:10px; z-index:80; opacity:0; transition:opacity .2s; pointer-events:none; font-size:15px; max-width:90%}
+  .toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar">
+    <div class="sentence" id="sentence"></div>
+    <button class="barbtn speak" id="speakAll" aria-label="Speak sentence">🔊</button>
+    <button class="barbtn" id="backspace" aria-label="Remove last word">⌫</button>
+    <button class="barbtn" id="clear" aria-label="Clear sentence">✕</button>
+    <button class="barbtn lock" id="lock" aria-label="Hold for parent mode">🔒<svg viewBox="0 0 60 60"><circle cx="30" cy="30" r="27"/></svg></button>
+  </div>
+  <div class="editbanner">
+    <span class="sp"><b>Parent mode.</b> Tap a picture to edit it, or a <b>+</b> to add one. Tap 🔒 to finish.</span>
+    <button id="openSettings">⚙️ Settings &amp; categories</button>
+  </div>
+  <div class="core" id="core"></div>
+  <div class="tabs" id="tabs"></div>
+  <div class="gridwrap"><div class="grid" id="grid"></div></div>
+</div>
+
+<!-- Tile editor -->
+<div class="scrim" id="editScrim">
+  <div class="modal">
+    <h2 id="editTitle">Edit picture</h2>
+    <div class="row" style="align-items:flex-start">
+      <div class="preview" id="editPreview"></div>
+      <div style="flex:1; min-width:220px">
+        <div class="row"><label>Word</label><input type="text" id="fLabel" placeholder="e.g. Mom"></div>
+        <div class="row"><label>Says</label><input type="text" id="fSay" placeholder="Same as word if blank"></div>
+        <div class="row"><label>Emoji</label><input type="text" id="fEmoji" class="short" maxlength="8" placeholder="🙂"></div>
+      </div>
+    </div>
+
+    <h3>Picture</h3>
+    <div class="row">
+      <button class="btn" id="pickPhoto">📷 Choose / take photo</button>
+      <button class="btn" id="removePhoto">Remove photo</button>
+      <input type="file" id="photoInput" accept="image/*" hidden>
+    </div>
+    <p class="hint">Real photos of people and things your child knows usually work better than cartoons.</p>
+
+    <h3>Color</h3>
+    <div class="swatches" id="swatches"></div>
+
+    <h3>Voice</h3>
+    <div class="row">
+      <button class="btn" id="recBtn">🎙️ Record voice</button>
+      <button class="btn" id="pickAudio">Upload audio</button>
+      <button class="btn" id="playAudio">▶ Play</button>
+      <button class="btn" id="removeAudio">Remove</button>
+      <input type="file" id="audioInput" accept="audio/*" hidden>
+    </div>
+    <p class="hint" id="audioState">Uses the tablet's voice unless you record one.</p>
+
+    <h3>ASL sign video (optional)</h3>
+    <div class="row"><label>YouTube link</label><input type="text" id="fYT" placeholder="https://youtu.be/…"></div>
+    <div class="row"><label>Start / end</label>
+      <input type="text" id="fStart" class="short" placeholder="0:00"> to
+      <input type="text" id="fEnd" class="short" placeholder="0:05">
+      <span class="hint">seconds or m:ss, to play just the sign</span>
+    </div>
+    <div class="row">
+      <button class="btn" id="pickVideo">🎬 Use my own video instead</button>
+      <button class="btn" id="removeVideo">Remove video</button>
+      <button class="btn" id="testSign">Preview sign</button>
+      <input type="file" id="videoInput" accept="video/*" hidden>
+    </div>
+    <p class="hint" id="videoState"></p>
+
+    <h3>Position</h3>
+    <div class="row">
+      <button class="btn" id="moveLeft">◀ Move earlier</button>
+      <button class="btn" id="moveRight">Move later ▶</button>
+      <span class="hint">Try to keep words in the same spot once your child knows them.</span>
+    </div>
+
+    <div class="actions">
+      <button class="btn danger" id="deleteTile">Delete</button>
+      <span class="sp"></span>
+      <button class="btn" id="cancelEdit">Cancel</button>
+      <button class="btn primary" id="saveEdit">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings -->
+<div class="scrim" id="setScrim">
+  <div class="modal">
+    <h2>Settings</h2>
+    <h3>Grid</h3>
+    <div class="row"><label>Columns</label><select id="sCols"></select></div>
+    <div class="row"><label>Sentence bar</label><select id="sBar"><option value="1">Show</option><option value="0">Hide (just speak each word)</option></select></div>
+    <h3>Voice</h3>
+    <div class="row"><label>Voice</label><select id="sVoice"></select></div>
+    <div class="row"><label>Speed</label><input type="range" id="sRate" min="0.5" max="1.4" step="0.05" style="flex:1"><span id="sRateV" class="hint"></span></div>
+    <div class="row"><button class="btn" id="testVoice">🔊 Test voice</button></div>
+    <h3>Categories</h3>
+    <div id="catList"></div>
+    <div class="row"><button class="btn" id="addCat">+ Add category</button></div>
+    <h3>Backup</h3>
+    <div class="row">
+      <button class="btn" id="exportBtn">⬇ Save backup file</button>
+      <button class="btn" id="importBtn">⬆ Restore from backup</button>
+      <button class="btn danger" id="resetBtn">Reset to starter board</button>
+      <input type="file" id="importInput" accept="application/json,.json" hidden>
+    </div>
+    <p class="hint">Everything is stored on this tablet only. Save a backup after big changes.</p>
+    <div class="actions"><button class="btn primary" id="closeSettings">Done</button></div>
+  </div>
+</div>
+
+<!-- Sign viewer -->
+<div class="scrim" id="signScrim">
+  <div class="modal signview">
+    <p class="word" id="signWord"></p>
+    <div class="vid" id="signVid"></div>
+    <p class="hint" id="signLink"></p>
+    <div class="actions">
+      <button class="btn" id="signReplay">↻ Again</button>
+      <button class="btn primary" id="signClose">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm -->
+<div class="scrim" id="confirmScrim">
+  <div class="modal" style="width:min(420px,100%)">
+    <h2 id="confirmText">Are you sure?</h2>
+    <div class="actions"><button class="btn" id="confirmNo">Cancel</button><button class="btn danger" id="confirmYes">Yes</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+"use strict";
+const $ = s => document.querySelector(s);
+const SLOTS = 30, CORE_SLOTS = 10;
+const COLORS = ["#FFFFFF","#FFE9A8","#CDEBB0","#FFD3A3","#B9DCF7","#F7C4D8","#DCC8F0","#E4E7EB"];
+const uid = () => Math.random().toString(36).slice(2,10) + Date.now().toString(36).slice(-4);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const inFrame = (() => { try { return window.self !== window.top; } catch(e) { return true; } })();
+
+/* ---------- Storage (IndexedDB with in-memory fallback) ---------- */
+const mem = { kv:{}, media:{} };
+let db = null;
+function openDB(){
+  return new Promise(res => {
+    try {
+      const r = indexedDB.open("talkboard", 1);
+      r.onupgradeneeded = () => { r.result.createObjectStore("kv"); r.result.createObjectStore("media"); };
+      r.onsuccess = () => { db = r.result; res(); };
+      r.onerror = () => res();
+    } catch(e) { res(); }
+  });
+}
+function idb(store, mode, fn){
+  return new Promise(res => {
+    if (!db) return res(fn(null));
+    try {
+      const tx = db.transaction(store, mode), st = tx.objectStore(store);
+      const req = fn(st);
+      if (req && "onsuccess" in req) { req.onsuccess = () => res(req.result); req.onerror = () => res(undefined); }
+      else tx.oncomplete = () => res();
+    } catch(e) { res(undefined); }
+  });
+}
+const store = {
+  async get(s,k){ if(!db) return mem[s][k]; return idb(s,"readonly",st=>st.get(k)); },
+  async put(s,k,v){ mem[s][k]=v; if(db) await idb(s,"readwrite",st=>st.put(v,k)); },
+  async del(s,k){ delete mem[s][k]; if(db) await idb(s,"readwrite",st=>st.delete(k)); },
+};
+const urlCache = {};
+async function mediaURL(key){
+  if (!key) return null;
+  if (urlCache[key]) return urlCache[key];
+  const blob = await store.get("media", key);
+  if (!blob) return null;
+  return (urlCache[key] = URL.createObjectURL(blob));
+}
+
+/* ---------- Starter board ---------- */
+function T(label, emoji, color, extra={}){ return { id:uid(), label, emoji, color, ...extra }; }
+function pad(arr, n){ const a = arr.slice(0,n); while(a.length<n) a.push(null); return a; }
+function starter(){
+  const Y="#FFE9A8", G="#CDEBB0", O="#FFD3A3", B="#B9DCF7", P="#F7C4D8", W="#FFFFFF", V="#DCC8F0";
+  return {
+    v:1,
+    settings:{ cols:6, rate:0.9, voice:"", bar:true },
+    core: pad([
+      T("I","🙋",Y), T("want","🤲",G), T("more","➕",G), T("stop","✋",P), T("go","🏃",G),
+      T("help","🆘",G), T("all done","🏁",P), T("yes","👍",P), T("no","👎",P), T("like","❤️",G)
+    ], CORE_SLOTS),
+    cats:[
+      { id:uid(), name:"People", emoji:"👪", slots: pad([
+        T("Mom","👩",Y), T("Dad","👨",Y), T("me","🧒",Y), T("brother","👦",Y), T("sister","👧",Y), T("baby","👶",Y),
+        T("Grandma","👵",Y), T("Grandpa","👴",Y), T("friend","🧑‍🤝‍🧑",Y), T("teacher","🧑‍🏫",Y), T("dog","🐶",O), T("cat","🐱",O)
+      ], SLOTS)},
+      { id:uid(), name:"Food", emoji:"🍎", slots: pad([
+        T("eat","🍽️",G), T("drink","🥤",G), T("hungry","😋",B), T("thirsty","🫗",B), T("water","💧",O), T("milk","🥛",O),
+        T("juice","🧃",O), T("apple","🍎",O), T("banana","🍌",O), T("crackers","🍘",O), T("cheese","🧀",O), T("cookie","🍪",O),
+        T("pizza","🍕",O), T("chicken","🍗",O), T("yogurt","🥣",O), T("snack","🍿",O), T("grapes","🍇",O), T("mac and cheese","🍝",O)
+      ], SLOTS)},
+      { id:uid(), name:"Feelings", emoji:"😊", slots: pad([
+        T("happy","😀",B), T("sad","😢",B), T("mad","😠",B), T("scared","😨",B), T("tired","😴",B), T("silly","🤪",B),
+        T("hurt","🤕",B), T("sick","🤒",B), T("hot","🥵",B), T("cold","🥶",B), T("love you","🥰",P), T("hug","🤗",P)
+      ], SLOTS)},
+      { id:uid(), name:"Play", emoji:"🧸", slots: pad([
+        T("play","🎲",G), T("toy","🧸",O), T("ball","⚽",O), T("blocks","🧱",O), T("book","📖",O), T("show","📺",O),
+        T("music","🎵",O), T("bubbles","🫧",O), T("car","🚗",O), T("train","🚂",O), T("swing","🛝",O), T("outside","🌳",O),
+        T("color","🖍️",G), T("my turn","☝️",P), T("your turn","👉",P), T("again","🔁",G)
+      ], SLOTS)},
+      { id:uid(), name:"Places", emoji:"🏠", slots: pad([
+        T("home","🏠",O), T("school","🏫",O), T("park","🏞️",O), T("store","🛒",O), T("bath","🛁",O), T("bed","🛏️",O),
+        T("potty","🚽",O), T("car ride","🚙",O), T("Grandma's house","🏡",O), T("outside","🌤️",O)
+      ], SLOTS)},
+      { id:uid(), name:"Numbers", emoji:"🔢", slots: pad(
+        ["1","2","3","4","5","6","7","8","9","10"].map(n => T(n,"",W,{big:true}))
+      , SLOTS)},
+      { id:uid(), name:"Letters", emoji:"🔤", slots: pad(
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").map(l => T(l,"",W,{big:true}))
+      , SLOTS)},
+      { id:uid(), name:"Signs", emoji:"🤟", slots: pad([
+        T("hello","👋",P), T("goodbye","🚪",P), T("please","🙏",P), T("thank you","🙇",P), T("I love you","🤟",P),
+        T("sorry","😔",P), T("my turn","☝️",P), T("all done","🏁",P), T("more","➕",G), T("eat","🍽️",G), T("drink","🥤",G),
+        T("help","🆘",G), T("I'm hungry","😋",V), T("I'm tired","😴",V), T("I need the potty","🚽",V), T("I want a hug","🤗",V)
+      ], SLOTS)}
+    ]
+  };
+}
+
+/* ---------- State ---------- */
+let board, curCat = 0, editing = false, sentence = [];
+let saveTimer = null;
+function save(){ clearTimeout(saveTimer); saveTimer = setTimeout(() => store.put("kv","board", JSON.stringify(board)), 250); }
+
+function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),2600); }
+
+/* ---------- Speech ---------- */
+let voices = [];
+function loadVoices(){ try { voices = speechSynthesis.getVoices() || []; } catch(e){ voices=[]; } fillVoiceSelect(); }
+try { speechSynthesis.onvoiceschanged = loadVoices; } catch(e){}
+// Some voices read a lone capital letter as "capital I", so speak single letters by name.
+const LETTER_NAMES = {a:"ay",b:"bee",c:"see",d:"dee",e:"ee",f:"eff",g:"jee",h:"aitch",i:"eye",j:"jay",k:"kay",l:"ell",m:"em",n:"en",o:"oh",p:"pee",q:"cue",r:"are",s:"ess",t:"tee",u:"you",v:"vee",w:"double you",x:"ex",y:"why",z:"zee"};
+function speakable(text){
+  const t = String(text).trim();
+  if (/^[A-Za-z]$/.test(t)) return LETTER_NAMES[t.toLowerCase()];
+  return t;
+}
+function tts(text){
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(speakable(text));
+    u.rate = board.settings.rate || 0.9;
+    const v = voices.find(v => v.voiceURI === board.settings.voice);
+    if (v) u.voice = v; else u.lang = "en-US";
+    speechSynthesis.speak(u);
+  } catch(e){ toast("Speech isn't available on this device"); }
+}
+let curAudio = null;
+async function speakTile(t){
+  if (curAudio) { curAudio.pause(); curAudio = null; }
+  if (t.audio) {
+    const url = await mediaURL(t.audio);
+    if (url) { try { speechSynthesis.cancel(); } catch(e){} curAudio = new Audio(url); curAudio.play().catch(()=>tts(t.say||t.label)); return; }
+  }
+  tts(t.say || t.label);
+}
+
+/* ---------- Rendering ---------- */
+function tileHTML(t, where, idx){
+  if (!t) return `<button class="tile blank" data-where="${where}" data-idx="${idx}"><div class="pic">+</div></button>`;
+  let pic;
+  if (t.img) pic = `<div class="pic"><img src="${t.img}" alt=""></div>`;
+  else if (t.emoji) pic = `<div class="pic">${esc(t.emoji)}</div>`;
+  else pic = `<div class="pic big">${esc(t.label)}</div>`;
+  const hasSign = t.yt || t.video;
+  const showLbl = t.img || t.emoji;
+  return `<button class="tile" style="--bg-tile:${esc(t.color||"#fff")}" data-where="${where}" data-idx="${idx}">
+    ${pic}${showLbl ? `<div class="lbl">${esc(t.label)}</div>` : ""}
+    ${hasSign && !editing ? `<span class="sign" role="button" aria-label="Show sign" data-sign="1">🤟</span>` : ""}
+  </button>`;
+}
+function renderCore(){
+  const el = $("#core");
+  const items = board.core.map((t,i) => (t || editing) ? tileHTML(t,"core",i) : "").join("");
+  el.innerHTML = items;
+  el.style.display = items ? "" : "none";
+}
+function renderTabs(){
+  $("#tabs").innerHTML = board.cats.map((c,i) =>
+    `<button class="tab ${i===curCat?"on":""}" data-cat="${i}"><span class="e">${esc(c.emoji)}</span>${esc(c.name)}</button>`).join("");
+}
+function renderGrid(){
+  const cat = board.cats[curCat];
+  const g = $("#grid");
+  g.style.gridTemplateColumns = `repeat(${board.settings.cols}, minmax(0,1fr))`;
+  if (!cat) { g.innerHTML = ""; return; }
+  let last = cat.slots.length - 1;
+  if (!editing) { while (last >= 0 && !cat.slots[last]) last--; }
+  const cols = board.settings.cols;
+  const end = editing ? cat.slots.length : Math.ceil((last+1)/cols)*cols;
+  let html = "";
+  for (let i=0;i<Math.min(end,cat.slots.length);i++) html += tileHTML(cat.slots[i],"cat",i);
+  g.innerHTML = html;
+}
+function renderSentence(){
+  const el = $("#sentence");
+  el.innerHTML = sentence.map(t => `<span class="chip">${t.img?`<img src="${t.img}" alt="">`:(t.emoji?esc(t.emoji):"")}${esc(t.label)}</span>`).join("");
+  el.scrollLeft = el.scrollWidth;
+  const show = board.settings.bar;
+  ["#sentence","#speakAll","#backspace","#clear"].forEach(s => $(s).style.display = show ? "" : "none");
+  $(".topbar").style.justifyContent = show ? "" : "flex-end";
+}
+function render(){ document.body.classList.toggle("editing", editing); renderSentence(); renderCore(); renderTabs(); renderGrid(); }
+
+function getSlot(where, idx){ return where==="core" ? board.core[idx] : board.cats[curCat].slots[idx]; }
+function setSlot(where, idx, val){ if (where==="core") board.core[idx]=val; else board.cats[curCat].slots[idx]=val; }
+
+/* ---------- Interaction ---------- */
+function onTileTap(e){
+  const btn = e.target.closest(".tile"); if (!btn) return;
+  const where = btn.dataset.where, idx = +btn.dataset.idx;
+  const t = getSlot(where, idx);
+  if (editing) { openEditor(where, idx); return; }
+  if (!t) return;
+  if (e.target.closest("[data-sign]")) { openSign(t); return; }
+  btn.classList.add("pop"); setTimeout(()=>btn.classList.remove("pop"),120);
+  speakTile(t);
+  if (board.settings.bar) { sentence.push(t); renderSentence(); }
+}
+$("#grid").addEventListener("click", onTileTap);
+$("#core").addEventListener("click", onTileTap);
+$("#tabs").addEventListener("click", e => { const b=e.target.closest(".tab"); if(!b) return; curCat=+b.dataset.cat; renderTabs(); renderGrid(); $(".gridwrap").scrollTop=0; });
+$("#speakAll").onclick = () => { if (sentence.length) tts(sentence.map(t=>t.say||t.label).join(" ")); };
+$("#backspace").onclick = () => { sentence.pop(); renderSentence(); };
+$("#clear").onclick = () => { sentence = []; renderSentence(); };
+document.addEventListener("contextmenu", e => { if (!e.target.closest("input,textarea")) e.preventDefault(); });
+
+/* Hold-to-unlock parent mode */
+(() => {
+  const lock = $("#lock"); let timer = null;
+  const cancel = () => { clearTimeout(timer); timer=null; lock.classList.remove("holding"); };
+  lock.addEventListener("pointerdown", e => {
+    e.preventDefault();
+    if (editing) { editing=false; render(); toast("Parent mode off"); return; }
+    lock.classList.add("holding");
+    timer = setTimeout(() => { cancel(); editing = true; render(); toast("Parent mode on"); }, 2000);
+  });
+  ["pointerup","pointerleave","pointercancel"].forEach(ev => lock.addEventListener(ev, cancel));
+  lock.addEventListener("click", () => { if (!editing && !timer) toast("Hold the lock for 2 seconds for parent mode"); });
+})();
+
+/* ---------- Sign viewer ---------- */
+function parseTime(s){
+  s = String(s||"").trim(); if (!s) return null;
+  if (s.includes(":")) { const [m,sec]=s.split(":"); return (+m||0)*60+(+sec||0); }
+  const n = parseFloat(s); return isNaN(n) ? null : Math.floor(n);
+}
+function fmtTime(n){ if (n==null||n==="") return ""; n=+n; return Math.floor(n/60)+":"+String(n%60).padStart(2,"0"); }
+function ytInfo(url){
+  if (!url) return null;
+  const m = String(url).match(/(?:youtu\.be\/|[?&]v=|\/shorts\/|\/embed\/|\/live\/)([A-Za-z0-9_-]{11})/);
+  if (!m) return null;
+  const t = String(url).match(/[?&#](?:t|start)=(\d+)/);
+  return { id:m[1], t: t ? +t[1] : null };
+}
+let signTile = null;
+async function playSign(){
+  const t = signTile, box = $("#signVid"); box.innerHTML = ""; $("#signLink").innerHTML = "";
+  if (t.video) {
+    const url = await mediaURL(t.video);
+    if (url) { const v=document.createElement("video"); v.src=url; v.autoplay=true; v.muted=true; v.loop=true; v.playsInline=true; v.controls=false; box.appendChild(v); v.play().catch(()=>{}); return; }
+  }
+  const y = ytInfo(t.yt);
+  if (!y) { box.innerHTML = `<div style="color:#fff;padding:40px">No video yet</div>`; return; }
+  const start = t.start ?? y.t ?? 0;
+  const p = new URLSearchParams({ autoplay:"1", mute:"1", rel:"0", modestbranding:"1", playsinline:"1", controls:"0", fs:"0", iv_load_policy:"3", start:String(start) });
+  if (t.end != null) p.set("end", String(t.end));
+  box.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${y.id}?${p}" allow="autoplay; encrypted-media" referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
+  if (inFrame) $("#signLink").innerHTML = `Video not showing? It only plays in the installed app. <a href="https://www.youtube.com/watch?v=${y.id}&t=${start}s" target="_blank" rel="noopener">Open on YouTube</a>`;
+}
+function openSign(t){ signTile = t; $("#signWord").textContent = t.label; $("#signScrim").classList.add("open"); speakTile(t); playSign(); }
+function closeSign(){ $("#signScrim").classList.remove("open"); $("#signVid").innerHTML = ""; }
+$("#signReplay").onclick = playSign;
+$("#signClose").onclick = closeSign;
+
+/* ---------- Confirm dialog ---------- */
+function confirmBox(text){
+  return new Promise(res => {
+    $("#confirmText").textContent = text; $("#confirmScrim").classList.add("open");
+    const done = v => { $("#confirmScrim").classList.remove("open"); $("#confirmYes").onclick=$("#confirmNo").onclick=null; res(v); };
+    $("#confirmYes").onclick = () => done(true); $("#confirmNo").onclick = () => done(false);
+  });
+}
+
+/* ---------- Tile editor ---------- */
+let ed = null; // { where, idx, t (draft), pendingMedia:{}, removedMedia:[] }
+function openEditor(where, idx){
+  const existing = getSlot(where, idx);
+  const cat = board.cats[curCat];
+  const t = existing ? JSON.parse(JSON.stringify(existing)) : T("","", where==="core" ? "#CDEBB0" : "#FFFFFF");
+  ed = { where, idx, t, isNew: !existing, pending:{}, removed:[] };
+  $("#editTitle").textContent = existing ? "Edit picture" : (where==="core" ? "Add core word" : `Add to ${cat.name}`);
+  $("#fLabel").value = t.label; $("#fSay").value = t.say || ""; $("#fEmoji").value = t.emoji || "";
+  $("#fYT").value = t.yt || ""; $("#fStart").value = fmtTime(t.start); $("#fEnd").value = fmtTime(t.end);
+  $("#deleteTile").style.display = existing ? "" : "none";
+  $("#moveLeft").parentElement.style.display = existing ? "" : "none";
+  renderSwatches(); updatePreview(); updateMediaState();
+  $("#editScrim").classList.add("open");
+  setTimeout(()=>{ if(!existing) $("#fLabel").focus(); }, 50);
+}
+function renderSwatches(){
+  $("#swatches").innerHTML = COLORS.map(c => `<button class="sw ${ed.t.color===c?"on":""}" style="background:${c}" data-c="${c}"></button>`).join("");
+}
+$("#swatches").addEventListener("click", e => { const b=e.target.closest(".sw"); if(!b) return; ed.t.color=b.dataset.c; renderSwatches(); updatePreview(); });
+function readDraft(){
+  const t = ed.t;
+  t.label = $("#fLabel").value.trim(); t.say = $("#fSay").value.trim() || undefined;
+  t.emoji = $("#fEmoji").value.trim(); t.big = !t.emoji && !t.img;
+  t.yt = $("#fYT").value.trim() || undefined;
+  t.start = parseTime($("#fStart").value) ?? undefined; t.end = parseTime($("#fEnd").value) ?? undefined;
+}
+function updatePreview(){
+  readDraft();
+  $("#editPreview").innerHTML = tileHTML(ed.t.label||ed.t.emoji||ed.t.img ? {...ed.t, yt:null, video:null, label: ed.t.label||"…"} : null, "x", 0).replace('class="tile blank"','class="tile"');
+}
+["#fLabel","#fEmoji"].forEach(s => $(s).addEventListener("input", updatePreview));
+function updateMediaState(){
+  $("#audioState").textContent = ed.t.audio ? "✓ Using a recorded voice for this word." : "Uses the tablet's voice unless you record one.";
+  $("#playAudio").style.display = $("#removeAudio").style.display = ed.t.audio ? "" : "none";
+  $("#removeVideo").style.display = ed.t.video ? "" : "none";
+  $("#removePhoto").style.display = ed.t.img ? "" : "none";
+  $("#videoState").textContent = ed.t.video ? "✓ Using your own video (works offline). The YouTube link is ignored while this is set." : "Tip: a 3–5 second clip of you signing works offline and has no ads.";
+}
+function resizeImage(file){
+  return new Promise((res,rej) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const S = 360, c = document.createElement("canvas"); c.width = c.height = S;
+      const s = Math.min(img.width, img.height), sx = (img.width-s)/2, sy = (img.height-s)/2;
+      c.getContext("2d").drawImage(img, sx, sy, s, s, 0, 0, S, S);
+      URL.revokeObjectURL(url); res(c.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(); };
+    img.src = url;
+  });
+}
+$("#pickPhoto").onclick = () => $("#photoInput").click();
+$("#photoInput").onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  try { ed.t.img = await resizeImage(f); updatePreview(); updateMediaState(); } catch(_) { toast("Couldn't read that image"); }
+};
+$("#removePhoto").onclick = () => { ed.t.img = undefined; updatePreview(); updateMediaState(); };
+
+function attachMedia(kind, blob){
+  const key = uid();
+  if (ed.t[kind]) ed.removed.push(ed.t[kind]);
+  ed.pending[key] = blob; urlCache[key] = URL.createObjectURL(blob);
+  ed.t[kind] = key; updateMediaState();
+}
+$("#pickAudio").onclick = () => $("#audioInput").click();
+$("#audioInput").onchange = e => { const f=e.target.files[0]; e.target.value=""; if(f) attachMedia("audio", f); };
+$("#playAudio").onclick = async () => { const u = urlCache[ed.t.audio] || await mediaURL(ed.t.audio); if (u) new Audio(u).play().catch(()=>{}); };
+$("#removeAudio").onclick = () => { if (ed.t.audio) ed.removed.push(ed.t.audio); ed.t.audio = undefined; updateMediaState(); };
+$("#pickVideo").onclick = () => $("#videoInput").click();
+$("#videoInput").onchange = e => {
+  const f=e.target.files[0]; e.target.value=""; if(!f) return;
+  if (f.size > 40*1024*1024) { toast("That video is big. Try a shorter clip (under ~40 MB)."); return; }
+  attachMedia("video", f);
+};
+$("#removeVideo").onclick = () => { if (ed.t.video) ed.removed.push(ed.t.video); ed.t.video = undefined; updateMediaState(); };
+$("#testSign").onclick = () => {
+  readDraft();
+  if (!ed.t.video && !ytInfo(ed.t.yt)) { toast(ed.t.yt ? "That doesn't look like a YouTube link" : "Add a YouTube link or a video first"); return; }
+  openSign({...ed.t, label: ed.t.label || "Preview"});
+};
+
+/* Voice recording */
+let rec = null, recChunks = [];
+$("#recBtn").onclick = async () => {
+  if (rec && rec.state === "recording") { rec.stop(); return; }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
+    rec = new MediaRecorder(stream); recChunks = [];
+    rec.ondataavailable = e => e.data.size && recChunks.push(e.data);
+    rec.onstop = () => {
+      stream.getTracks().forEach(t=>t.stop());
+      $("#recBtn").textContent = "🎙️ Record voice";
+      attachMedia("audio", new Blob(recChunks, { type: rec.mimeType || "audio/webm" }));
+      toast("Voice saved for this word");
+    };
+    rec.start(); $("#recBtn").textContent = "⏹ Stop recording";
+  } catch(e) {
+    toast("Can't use the microphone here. Upload an audio file instead.");
+  }
+};
+
+/* Move, delete, save */
+function move(dir){
+  const list = ed.where==="core" ? board.core : board.cats[curCat].slots;
+  const j = ed.idx + dir; if (j<0 || j>=list.length) return;
+  [list[j], list[ed.idx]] = [list[ed.idx], list[j]];
+  ed.idx = j; save(); render();
+  toast(dir<0 ? "Moved earlier" : "Moved later");
+}
+$("#moveLeft").onclick = () => move(-1);
+$("#moveRight").onclick = () => move(1);
+async function commitMedia(){
+  for (const [k,b] of Object.entries(ed.pending)) await store.put("media", k, b);
+  ed.pending = {};
+}
+async function cleanupMedia(keys){ for (const k of keys) { await store.del("media", k); if (urlCache[k]) { URL.revokeObjectURL(urlCache[k]); delete urlCache[k]; } } }
+$("#saveEdit").onclick = async () => {
+  readDraft();
+  if (!ed.t.label) { toast("Give it a word first"); $("#fLabel").focus(); return; }
+  await commitMedia(); await cleanupMedia(ed.removed);
+  setSlot(ed.where, ed.idx, ed.t); save(); closeEditor(); render();
+};
+$("#cancelEdit").onclick = async () => { await cleanupMedia(Object.keys(ed.pending)); closeEditor(); };
+$("#deleteTile").onclick = async () => {
+  if (!await confirmBox(`Delete “${ed.t.label}”?`)) return;
+  const old = getSlot(ed.where, ed.idx);
+  await cleanupMedia([old?.audio, old?.video, ...Object.keys(ed.pending)].filter(Boolean));
+  setSlot(ed.where, ed.idx, null); save(); closeEditor(); render();
+};
+function closeEditor(){ $("#editScrim").classList.remove("open"); ed = null; }
+
+/* ---------- Settings ---------- */
+function fillVoiceSelect(){
+  const sel = $("#sVoice"); if (!sel || !board) return;
+  const en = voices.filter(v => /^en/i.test(v.lang)); const list = en.length ? en : voices;
+  sel.innerHTML = `<option value="">Default</option>` + list.map(v => `<option value="${esc(v.voiceURI)}">${esc(v.name)} (${esc(v.lang)})</option>`).join("");
+  sel.value = board.settings.voice || "";
+}
+function renderCatList(){
+  $("#catList").innerHTML = board.cats.map((c,i) => `
+    <div class="catrow" data-i="${i}">
+      <input class="em" value="${esc(c.emoji)}" data-f="emoji" maxlength="8">
+      <input class="nm" value="${esc(c.name)}" data-f="name">
+      <button class="btn" data-a="up" ${i===0?"disabled":""}>▲</button>
+      <button class="btn" data-a="down" ${i===board.cats.length-1?"disabled":""}>▼</button>
+      <button class="btn danger" data-a="del">✕</button>
+    </div>`).join("");
+}
+$("#catList").addEventListener("input", e => {
+  const row = e.target.closest(".catrow"); if (!row) return;
+  board.cats[+row.dataset.i][e.target.dataset.f] = e.target.value; save(); renderTabs();
+});
+$("#catList").addEventListener("click", async e => {
+  const b = e.target.closest("button"); if (!b) return;
+  const i = +b.closest(".catrow").dataset.i, a = b.dataset.a, cats = board.cats;
+  if (a==="up" && i>0) [cats[i-1],cats[i]]=[cats[i],cats[i-1]];
+  if (a==="down" && i<cats.length-1) [cats[i+1],cats[i]]=[cats[i],cats[i+1]];
+  if (a==="del") {
+    if (cats.length===1) { toast("Keep at least one category"); return; }
+    if (!await confirmBox(`Delete the “${cats[i].name}” category and its pictures?`)) return;
+    await cleanupMedia(cats[i].slots.flatMap(t => t ? [t.audio,t.video] : []).filter(Boolean));
+    cats.splice(i,1);
+  }
+  curCat = Math.min(curCat, cats.length-1); save(); renderCatList(); render();
+});
+$("#addCat").onclick = () => { board.cats.push({ id:uid(), name:"New", emoji:"⭐", slots:pad([],SLOTS) }); curCat = board.cats.length-1; save(); renderCatList(); render(); };
+$("#openSettings").onclick = () => {
+  const s = board.settings;
+  $("#sCols").innerHTML = [3,4,5,6,7,8].map(n=>`<option ${n===s.cols?"selected":""}>${n}</option>`).join("");
+  $("#sBar").value = s.bar ? "1" : "0";
+  $("#sRate").value = s.rate; $("#sRateV").textContent = (+s.rate).toFixed(2)+"×";
+  loadVoices(); renderCatList();
+  $("#setScrim").classList.add("open");
+};
+$("#sCols").onchange = e => { board.settings.cols = +e.target.value; save(); renderGrid(); };
+$("#sBar").onchange = e => { board.settings.bar = e.target.value==="1"; sentence=[]; save(); renderSentence(); };
+$("#sRate").oninput = e => { board.settings.rate = +e.target.value; $("#sRateV").textContent = (+e.target.value).toFixed(2)+"×"; save(); };
+$("#sVoice").onchange = e => { board.settings.voice = e.target.value; save(); };
+$("#testVoice").onclick = () => tts("Hi! I want more crackers, please.");
+$("#closeSettings").onclick = () => $("#setScrim").classList.remove("open");
+
+/* Backup */
+const blobToDataURL = b => new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); });
+async function dataURLToBlob(d){ return (await fetch(d)).blob(); }
+function allTiles(){ return [...board.core, ...board.cats.flatMap(c=>c.slots)].filter(Boolean); }
+$("#exportBtn").onclick = async () => {
+  const media = {};
+  for (const t of allTiles()) for (const k of [t.audio,t.video]) if (k && !media[k]) { const b = await store.get("media",k); if (b) media[k] = await blobToDataURL(b); }
+  const blob = new Blob([JSON.stringify({ app:"talkboard", v:1, board, media })], { type:"application/json" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = `talkboard-backup-${new Date().toISOString().slice(0,10)}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  toast(inFrame ? "Backups download from the installed app" : "Backup saved to Downloads");
+};
+$("#importBtn").onclick = () => $("#importInput").click();
+$("#importInput").onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    if (data.app !== "talkboard" || !data.board) throw 0;
+    if (!await confirmBox("Replace this board with the backup?")) return;
+    for (const [k,d] of Object.entries(data.media||{})) await store.put("media", k, await dataURLToBlob(d));
+    board = data.board; curCat = 0; save(); $("#setScrim").classList.remove("open"); render(); toast("Backup restored");
+  } catch(_) { toast("That file isn't a TalkBoard backup"); }
+};
+$("#resetBtn").onclick = async () => {
+  if (!await confirmBox("Erase all changes and go back to the starter board?")) return;
+  board = starter(); curCat = 0; save(); $("#setScrim").classList.remove("open"); render();
+};
+
+/* ---------- Boot ---------- */
+(async () => {
+  await openDB();
+  try { const saved = await store.get("kv","board"); board = saved ? JSON.parse(saved) : starter(); } catch(e){ board = starter(); }
+  if (!board || !board.cats) board = starter();
+  render(); loadVoices();
+  if (!inFrame && "serviceWorker" in navigator) { try { navigator.serviceWorker.register("sw.js"); } catch(e){} }
+  try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch(e){}
+})();
+})();
+</script>
+</body>
+</html>
