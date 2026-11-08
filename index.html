@@ -139,6 +139,9 @@
   .tile.dragsrc{opacity:.3}
   .droptarget{outline:4px dashed var(--accent); outline-offset:2px}
   body.dragging, body.dragging *{cursor:grabbing !important}
+  .syncstatus{padding:10px 12px; border-radius:10px; background:#EEF6EE; font-size:15px; margin:6px 0}
+  .syncstatus.warn{background:#FFF4DE} .syncstatus.err{background:#FCE8E4}
+  .synccode{font-family:ui-monospace,Menlo,monospace; font-size:18px; letter-spacing:.04em; background:#F4F5F7; border-radius:10px; padding:10px 12px; word-break:break-all; user-select:all; -webkit-user-select:all}
   .toast{position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:#222; color:#fff; padding:10px 16px; border-radius:10px; z-index:80; opacity:0; transition:opacity .2s; pointer-events:none; font-size:15px; max-width:90%}
   .toast.show{opacity:1}
 </style>
@@ -267,6 +270,8 @@
     <h3>Categories</h3>
     <div id="catList"></div>
     <div class="row"><button class="btn" id="addCat">+ Add category</button></div>
+    <h3>Cloud sync</h3>
+    <div id="syncBox"></div>
     <h3>Backup</h3>
     <div class="row">
       <button class="btn" id="exportBtn">⬇ Save backup file</button>
@@ -274,7 +279,7 @@
       <button class="btn danger" id="resetBtn">Reset to starter board</button>
       <input type="file" id="importInput" accept="application/json,.json" hidden>
     </div>
-    <p class="hint">Everything is stored on this tablet only. Save a backup after big changes.</p>
+    <p class="hint">Without cloud sync, everything is stored on this device only. Save a backup after big changes.</p>
     <div class="actions"><button class="btn primary" id="closeSettings">Done</button></div>
   </div>
 </div>
@@ -414,7 +419,11 @@ function starter(){
 /* ---------- State ---------- */
 let board, curCat = 0, page = 0, editing = false, sentence = [];
 let saveTimer = null;
-function save(){ clearTimeout(saveTimer); saveTimer = setTimeout(() => store.put("kv","board", JSON.stringify(board)), 250); }
+let applyingRemote = false;
+function save(){
+  clearTimeout(saveTimer); saveTimer = setTimeout(() => store.put("kv","board", JSON.stringify(board)), 250);
+  if (!applyingRemote && typeof markDirty === "function") markDirty();
+}
 
 function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),2600); }
 
@@ -619,7 +628,7 @@ document.addEventListener("contextmenu", e => { if (!e.target.closest("input,tex
   const cancel = () => { clearTimeout(timer); timer=null; lock.classList.remove("holding"); };
   lock.addEventListener("pointerdown", e => {
     e.preventDefault();
-    if (editing) { editing=false; justExited=true; render(); toast("Parent mode off"); return; }
+    if (editing) { editing=false; justExited=true; render(); toast("Parent mode off"); setTimeout(checkRemote, 500); return; }
     lock.classList.add("holding");
     timer = setTimeout(() => { cancel(); editing = true; render(); toast("Parent mode on"); }, 2000);
   });
@@ -1009,7 +1018,7 @@ $("#openSettings").onclick = () => {
   $("#sCool").innerHTML = [0,300,500,1000,1500,2000,3000].map(v=>`<option value="${v}" ${v===s.cooldown?"selected":""}>${ms(v,"Off")}</option>`).join("");
   $("#sPalm").value = s.palm ? "1" : "0";
   $("#sRate").value = s.rate; $("#sRateV").textContent = (+s.rate).toFixed(2)+"×";
-  loadVoices(); renderCatList();
+  loadVoices(); renderCatList(); renderSync();
   $("#setScrim").classList.add("open");
 };
 $("#sCols").onchange = e => { board.settings.cols = +e.target.value; page=0; save(); renderGrid(); };
@@ -1063,6 +1072,166 @@ const refreshSigns = () => { if (board) { renderCore(); renderGrid(); } };
 window.addEventListener("online", refreshSigns);
 window.addEventListener("offline", refreshSigns);
 
+
+/* ---------- Cloud sync (Supabase) ---------- */
+const SB_URL = "https://fycyhrrrardmpfrgtjlv.supabase.co";
+const SB_KEY = "sb_publishable_ai40VACXvQLgrHpoBjZf1w_3kO-nzEc";   // public key: the board is protected by the sync code
+let sync = { code:null, version:0, dirty:false, conflict:false, last:null, lastBy:null, error:null };
+let syncBusy = false, pushTimer = null, changeSeq = 0, showCode = false;
+
+async function rpc(fn, args){
+  const r = await fetch(`${SB_URL}/rest/v1/rpc/${fn}`, {
+    method:"POST", headers:{ apikey:SB_KEY, "Content-Type":"application/json" }, body: JSON.stringify(args) });
+  const text = await r.text();
+  if (!r.ok) throw new Error(r.status === 413 ? "The board is too big to sync (probably large videos)" : `Cloud error ${r.status}`);
+  return text ? JSON.parse(text) : null;
+}
+const saveSync = () => store.put("kv", "sync", JSON.stringify(sync));
+const deviceName = () => NATIVE ? "the tablet app" : /Android/i.test(navigator.userAgent) ? "Android (Chrome)" : "a computer";
+const fmtCode = c => c.match(/.{1,4}/g).join("-");
+const normCode = c => String(c||"").toUpperCase().replace(/[^A-Z0-9]/g, "");
+function newCode(){
+  const A = "ABCDEFGHJKMNPQRSTUVWXYZ23456789", b = new Uint8Array(32); crypto.getRandomValues(b);
+  return [...b].map(x => A[x % A.length]).join("");
+}
+async function buildPayload(){
+  // photos travel inside the board; recordings and videos go along as media.
+  // Uncropped photo originals stay on the device they were added on.
+  const media = {};
+  for (const t of allTiles()) for (const k of [t.audio, t.video]) if (k && !media[k]) {
+    const b = await store.get("media", k); if (b) media[k] = await blobToDataURL(b);
+  }
+  return { app:"talkboard", v:1, board, media };
+}
+async function applyPayload(p){
+  for (const [k,d] of Object.entries(p.media || {})) await store.put("media", k, await dataURLToBlob(d));
+  const myVoice = board.settings.voice;
+  applyingRemote = true;
+  board = p.board; board.settings = { ...DEFAULTS, ...board.settings, voice: myVoice };
+  curCat = Math.min(curCat, board.cats.length - 1); page = 0; sentence = [];
+  save(); applyingRemote = false; render();
+}
+function markDirty(){
+  if (!sync.code) return;
+  changeSeq++; sync.dirty = true; saveSync(); renderSync();
+  clearTimeout(pushTimer); pushTimer = setTimeout(() => pushNow(false), 5000);
+}
+async function pushNow(force){
+  if (!sync.code || syncBusy || (!sync.dirty && !force)) return;
+  clearTimeout(pushTimer);
+  if (!navigator.onLine) { sync.error = "Offline. Changes will upload when you're back online."; renderSync(); return; }
+  syncBusy = true; renderSync();
+  const seq = changeSeq;
+  try {
+    const res = await rpc("tb_put", { p_code:sync.code, p_data: await buildPayload(), p_base:sync.version, p_device:deviceName(), p_force:!!force });
+    if (res.ok) {
+      sync.version = res.version; sync.conflict = false; sync.error = null;
+      sync.last = new Date().toISOString(); sync.lastBy = deviceName();
+      sync.dirty = changeSeq !== seq;                              // edited again while uploading?
+      if (sync.dirty) { clearTimeout(pushTimer); pushTimer = setTimeout(() => pushNow(false), 5000); }
+    } else if (res.conflict) {
+      sync.conflict = true;
+      if (editing) toast("The cloud board changed on another device. See Settings → Cloud sync.");
+    }
+  } catch(e) { sync.error = e.message || String(e); }
+  syncBusy = false; await saveSync(); renderSync();
+}
+async function pullNow(){
+  if (!sync.code || syncBusy) return false;
+  syncBusy = true; renderSync();
+  try {
+    const r = await rpc("tb_get", { p_code:sync.code });
+    if (!r) { sync.error = "No board found in the cloud for this code."; return false; }
+    await applyPayload(r.data);
+    Object.assign(sync, { version:r.version, dirty:false, conflict:false, error:null, last:r.updated_at, lastBy:r.updated_by });
+    changeSeq++;
+    return true;
+  } catch(e) { sync.error = e.message || String(e); return false; }
+  finally { syncBusy = false; await saveSync(); renderSync(); }
+}
+async function checkRemote(){
+  if (!sync.code || syncBusy || !navigator.onLine || editing || document.querySelector(".scrim.open")) return;
+  try {
+    const m = await rpc("tb_meta", { p_code:sync.code });
+    if (!m) return;
+    if (m.version > sync.version) {
+      if (!sync.dirty) { if (await pullNow()) toast("Board updated"); }
+      else { sync.conflict = true; await saveSync(); renderSync(); }
+    } else if (sync.dirty) pushNow(false);
+    if (sync.error && /Offline|Cloud error/.test(sync.error)) { sync.error = null; renderSync(); }
+  } catch(e) { /* try again later */ }
+}
+
+function renderSync(){
+  const box = $("#syncBox"); if (!box) return;
+  if (!sync.code) {
+    box.innerHTML = `
+      <p class="hint">Keep this board the same on every device. Edit on your computer and the tablet updates itself the next time TalkBoard opens (and the other way around).</p>
+      <div class="row"><button class="btn primary" data-s="create">☁️ Start syncing this board</button></div>
+      <p class="hint">Or, if you already started on another device, enter its sync code:</p>
+      <div class="row"><input type="text" id="syncInput" placeholder="XXXX-XXXX-…" autocomplete="off" autocapitalize="characters"><button class="btn" data-s="link">Link</button></div>
+      ${sync.error ? `<div class="syncstatus err">${esc(sync.error)}</div>` : ""}`;
+    return;
+  }
+  const when = sync.last ? new Date(sync.last).toLocaleString([], { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" }) : "";
+  let status, cls = "";
+  if (syncBusy) status = "Syncing…";
+  else if (sync.conflict) { cls = "warn"; status = `⚠️ This device <b>and</b> another device both changed the board. Which one should be kept?
+      <div class="row"><button class="btn" data-s="keepLocal">Keep this device's board</button><button class="btn" data-s="keepCloud">Use the cloud board</button></div>`; }
+  else if (sync.error) { cls = "err"; status = esc(sync.error); }
+  else if (sync.dirty) status = "Changes waiting to upload…";
+  else status = `✓ In sync${when ? ` · last saved ${when}${sync.lastBy ? " from " + esc(sync.lastBy) : ""}` : ""}`;
+  box.innerHTML = `
+    <div class="syncstatus ${cls}">${status}</div>
+    <div class="row">
+      <button class="btn" data-s="push">☁️⬆ Save to cloud now</button>
+      <button class="btn" data-s="pull">☁️⬇ Load from cloud</button>
+      <button class="btn" data-s="code">${showCode ? "Hide" : "Show"} sync code</button>
+      <button class="btn danger" data-s="off">Turn off sync</button>
+    </div>
+    ${showCode ? `<p class="hint">Enter this code on your other device (Settings → Cloud sync → Link). Keep it private: anyone with it can see and change the board.</p>
+      <div class="synccode">${fmtCode(sync.code)}</div>
+      <div class="row"><button class="btn" data-s="copy">Copy code</button></div>` : ""}
+    <p class="hint">Changes upload automatically a few seconds after you make them. Photos, recordings and sign videos sync; the voice choice stays per device.</p>`;
+}
+$("#syncBox").addEventListener("click", async e => {
+  const b = e.target.closest("[data-s]"); if (!b || syncBusy) return;
+  const a = b.dataset.s;
+  if (a === "create") {
+    sync = { code:newCode(), version:0, dirty:true, conflict:false, last:null, lastBy:null, error:null };
+    showCode = true; await saveSync(); await pushNow(false);
+    if (!sync.error) toast("Sync is on. Enter the code on your other device.");
+  }
+  if (a === "link") {
+    const code = normCode($("#syncInput").value);
+    if (code.length < 24) { sync.error = "That code looks too short. Check it and try again."; renderSync(); return; }
+    try {
+      const m = await rpc("tb_meta", { p_code:code });
+      if (!m) { sync.error = "No board found with that code."; renderSync(); return; }
+      if (!await confirmBox("Replace the board on this device with the one from the cloud?")) return;
+      sync = { code, version:0, dirty:false, conflict:false, last:null, lastBy:null, error:null };
+      if (await pullNow()) toast("Linked. This device now has the synced board.");
+    } catch(err) { sync.error = err.message; renderSync(); }
+  }
+  if (a === "push") pushNow(false);
+  if (a === "pull") {
+    if (sync.dirty && !await confirmBox("This device has changes that haven't uploaded yet. Replace them with the cloud board?")) return;
+    if (await pullNow()) toast("Loaded the cloud board");
+  }
+  if (a === "keepLocal") pushNow(true);
+  if (a === "keepCloud") { if (await pullNow()) toast("Loaded the cloud board"); }
+  if (a === "code") { showCode = !showCode; renderSync(); }
+  if (a === "copy") { try { await navigator.clipboard.writeText(fmtCode(sync.code)); toast("Code copied"); } catch(_) { toast("Select the code and copy it"); } }
+  if (a === "off") {
+    if (!await confirmBox("Turn off sync on this device? The board stays here; it just stops updating.")) return;
+    sync = { code:null, version:0, dirty:false, conflict:false, last:null, lastBy:null, error:null }; showCode = false;
+    await saveSync(); renderSync();
+  }
+});
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkRemote(); });
+window.addEventListener("online", () => { checkRemote(); });
+setInterval(() => { if (document.visibilityState === "visible") checkRemote(); }, 120000);
+
 /* ---------- Boot ---------- */
 (async () => {
   await openDB();
@@ -1070,6 +1239,8 @@ window.addEventListener("offline", refreshSigns);
   if (!board || !board.cats) board = starter();
   board.settings = { ...DEFAULTS, ...board.settings };
   render(); loadVoices();
+  try { const sv = await store.get("kv","sync"); if (sv) sync = { ...sync, ...JSON.parse(sv), error:null }; } catch(e){}
+  renderSync(); checkRemote();
   if (!inFrame && "serviceWorker" in navigator) { try { navigator.serviceWorker.register("sw.js"); } catch(e){} }
   try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch(e){}
 })();

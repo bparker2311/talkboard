@@ -16,7 +16,7 @@ This guide is for parents, caregivers, and anyone else who sets up or helps with
 6. [Rearranging pictures](#6-rearranging-pictures)
 7. [ASL sign videos](#7-asl-sign-videos)
 8. [Settings](#8-settings)
-9. [Backups](#9-backups)
+9. [Cloud sync and backups](#9-cloud-sync-and-backups)
 10. [Tips for teaching with the board](#10-tips-for-teaching-with-the-board)
 11. [Troubleshooting](#11-troubleshooting)
 
@@ -209,7 +209,26 @@ Each category has:
 
 ---
 
-## 9. Backups
+## 9. Cloud sync and backups
+
+### Cloud sync
+Cloud sync keeps the board the same on every device, so you can edit on your computer and the tablet updates itself.
+
+**Set it up once**
+1. On the device that has the board you want to keep (usually your computer): parent mode → ⚙️ Settings → **Cloud sync** → **☁️ Start syncing this board**. A sync code appears, like `ABCD-EFGH-…`. Tap **Copy code**.
+2. On the tablet, **outside Samsung Kids**: open TalkBoard → parent mode → ⚙️ Settings → **Cloud sync** → type or paste the code → **Link** → confirm. The tablet's board is replaced with the synced one.
+
+**Day to day**
+- Changes upload automatically about 5 seconds after you make them.
+- The other device picks them up when TalkBoard opens, when it comes back online, when you leave parent mode, and every couple of minutes while it's open. A small "Board updated" message appears.
+- This works inside Samsung Kids too, because syncing doesn't need the file picker.
+- **☁️⬆ Save to cloud now** and **☁️⬇ Load from cloud** do it by hand.
+- If both devices changed the board before syncing, Settings asks which one to keep. Nothing is overwritten without asking.
+- What syncs: pictures, photos, words, colors, layout, categories, settings, recordings and uploaded sign videos. What doesn't: the voice choice (it's per device), and the uncropped originals of photos, so **✂️ Adjust crop** only works on the device where the photo was added.
+
+**Keep the code private.** Anyone with it can see and change the board. If you think it got out, tap **Turn off sync** on each device and start again with a new code.
+
+### Backup files
 
 **Everything you add (photos, recordings, videos, layout) is stored only on this tablet.** Uninstalling the app, clearing Chrome's data, or losing the tablet erases it.
 

@@ -37,3 +37,9 @@ text-to-speech voices, and works offline. It doesn't depend on Chrome, so it can
 - Latest APK: https://github.com/bparker2311/talkboard/releases/latest/download/TalkBoard.apk
 - The app loads the live site, so changes to index.html reach it without a new APK.
 - The app keeps its own storage, separate from Chrome. Move a board over with Save backup / Restore.
+
+## Cloud sync (Supabase)
+Optional sync between devices, using a Supabase project.
+- Run `supabase/setup.sql` once in the Supabase SQL editor. It creates one table (row level security on, no policies, so the public key can't read it directly) and three functions that only work with a board's sync code. Only a SHA-256 hash of each code is stored.
+- The project URL and publishable key are in `index.html` (`SB_URL`, `SB_KEY`). Both are public by design. Never put the service-role key in the app.
+- Each device keeps a local copy and syncs with version numbers: uploads a few seconds after a change, checks for a newer version on open, and asks the user to choose when both sides changed.
