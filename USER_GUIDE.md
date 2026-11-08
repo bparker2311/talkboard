@@ -41,6 +41,11 @@ App pinning keeps your child from swiping out of the app.
 2. Open TalkBoard, open **Recent apps** (the square button or swipe up and hold), tap the TalkBoard icon at the top of its card, and choose **Pin**.
 3. To unpin, hold **Back** and **Recent apps** together (or follow the on-screen hint), then enter your PIN.
 
+**Using the Android app with Samsung Kids**
+The TalkBoard Android app (install from https://github.com/bparker2311/talkboard/releases/latest/download/TalkBoard.apk) can be added to Samsung Kids under **Parental controls → Apps**.
+- Samsung Kids blocks the file picker, so **adding photos, uploading videos or audio, and saving or restoring backups only work outside Samsung Kids**. Exit Samsung Kids, open TalkBoard from the normal app drawer, make your changes, then go back into Samsung Kids. It's the same app and the same board, so the changes carry over.
+- Typing words, emoji, YouTube links, colors, rearranging and settings all work inside Samsung Kids too (in parent mode).
+
 ---
 
 ## 2. The screen at a glance
