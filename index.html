@@ -84,7 +84,10 @@
   .tile.blank{visibility:hidden}
   body.editing .tile.blank{visibility:visible; background:transparent; box-shadow:inset 0 0 0 2px #CBD2DC; color:#9AA3AF}
   body.editing .tile.blank .pic{font-size:40px}
-  body.editing .tile:not(.blank)::after{content:"✎"; position:absolute; top:6px; left:8px; font-size:18px; color:#555}
+  body.editing .tile:not(.blank)::after{content:"✎"; position:absolute; top:6px; left:8px; font-size:18px; color:currentColor; opacity:.6}
+  .tile{color:var(--fg-tile,#1F2733)}
+  .tile .pic.big.word{font-size:clamp(22px,3.4vw,44px); text-align:center; line-height:1.05; word-break:break-word; padding:0 4px}
+  .grid.fit .tile .pic.big.word{font-size:min(3.4vw, 6vh)}
   .sign{position:absolute; top:4px; right:4px; width:44px; height:44px; border-radius:50%; border:0;
     background:rgba(255,255,255,.92); box-shadow:0 1px 3px rgba(0,0,0,.25); font-size:22px; display:flex; align-items:center; justify-content:center}
   .core .sign{width:34px; height:34px; font-size:17px}
@@ -110,7 +113,10 @@
   .btn.danger{background:#FCE8E4; color:var(--danger)}
   .btn:active{filter:brightness(.95)}
   .hint{font-size:13px; color:var(--muted); margin:4px 0}
-  .swatches{display:flex; gap:8px; flex-wrap:wrap}
+  .swatches{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+  .swatches .swl{width:100%; font-size:13px; color:var(--muted); margin-top:4px}
+  .sw.custom{position:relative; overflow:hidden; background:conic-gradient(red,yellow,lime,cyan,blue,magenta,red); display:inline-block}
+  .sw.custom input{position:absolute; inset:-8px; width:60px; height:60px; opacity:0; cursor:pointer}
   .sw{width:38px; height:38px; border-radius:10px; border:2px solid rgba(0,0,0,.1)}
   .sw.on{outline:3px solid var(--accent); outline-offset:2px}
   .preview{width:110px; height:110px; flex:none}
@@ -302,7 +308,17 @@
 const $ = s => document.querySelector(s);
 const SLOTS = 30, CORE_SLOTS = 10;
 const DEFAULTS = { cols:6, rate:0.9, voice:"", bar:true, fit:true, rows:3, hold:0, cooldown:500, palm:true, showClear:true };
-const COLORS = ["#FFFFFF","#FFE9A8","#CDEBB0","#FFD3A3","#B9DCF7","#F7C4D8","#DCC8F0","#E4E7EB"];
+const COLORS = ["#FFFFFF","#FFE9A8","#CDEBB0","#FFD3A3","#B9DCF7","#F7C4D8","#DCC8F0","#E4E7EB"];   // soft, for word groups
+const BRIGHT = [["red","#E53935"],["orange","#FB8C00"],["yellow","#FDD835"],["green","#43A047"],["blue","#1E88E5"],
+  ["purple","#8E24AA"],["pink","#F06292"],["brown","#795548"],["black","#000000"],["white","#FFFFFF"],["gray","#9E9E9E"],
+  ["light blue","#81D4FA"],["dark green","#1B5E20"],["gold","#C9A227"],["silver","#C0C0C0"]];
+// Dark text on light colors, white text on dark ones
+function inkFor(hex){
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || ""); if (!m) return "#1F2733";
+  const n = parseInt(m[1],16), ch = v => { v/=255; return v <= .03928 ? v/12.92 : Math.pow((v+.055)/1.055, 2.4); };
+  const L = .2126*ch(n>>16&255) + .7152*ch(n>>8&255) + .0722*ch(n&255);
+  return L > .3 ? "#1F2733" : "#FFFFFF";
+}
 const uid = () => Math.random().toString(36).slice(2,10) + Date.now().toString(36).slice(-4);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const inFrame = (() => { try { return window.self !== window.top; } catch(e) { return true; } })();
@@ -452,11 +468,11 @@ function tileHTML(t, where, idx){
   let pic;
   if (t.img) pic = `<div class="pic"><img src="${t.img}" alt=""></div>`;
   else if (t.emoji) pic = `<div class="pic">${esc(t.emoji)}</div>`;
-  else pic = `<div class="pic big">${esc(t.label)}</div>`;
+  else pic = `<div class="pic big${[...(t.label||"")].length > 2 ? " word" : ""}">${esc(t.label)}</div>`;
   const hasSign = t.yt || t.video;
   const signOff = !t.video && !navigator.onLine;            // YouTube needs internet
   const showLbl = t.img || t.emoji;
-  return `<button class="tile" style="--bg-tile:${esc(t.color||"#fff")}" data-where="${where}" data-idx="${idx}">
+  return `<button class="tile" style="--bg-tile:${esc(t.color||"#fff")};--fg-tile:${inkFor(t.color||"#FFFFFF")}" data-where="${where}" data-idx="${idx}">
     ${pic}${showLbl ? `<div class="lbl">${esc(t.label)}</div>` : ""}
     ${hasSign && !editing ? `<span class="sign${signOff ? " off" : ""}" role="button" aria-label="Show sign" data-sign="1">🤟</span>` : ""}
   </button>`;
@@ -757,9 +773,15 @@ function openEditor(where, idx){
   setTimeout(()=>{ if(!existing) $("#fLabel").focus(); }, 50);
 }
 function renderSwatches(){
-  $("#swatches").innerHTML = COLORS.map(c => `<button class="sw ${ed.t.color===c?"on":""}" style="background:${c}" data-c="${c}"></button>`).join("");
+  const cur = (ed.t.color||"").toUpperCase(), sw = (c, title="") => `<button class="sw ${cur===c.toUpperCase()?"on":""}" style="background:${c}" data-c="${c}" title="${title}"></button>`;
+  const known = [...COLORS, ...BRIGHT.map(b=>b[1])].some(c => c.toUpperCase() === cur);
+  $("#swatches").innerHTML =
+    `<div class="swl">Soft (for grouping words)</div>` + COLORS.map(c => sw(c)).join("") +
+    `<div class="swl">Bright</div>` + BRIGHT.map(([n,c]) => sw(c, n)).join("") +
+    `<label class="sw custom ${known?"":"on"}" title="Any color" ${known?"":`style="background:${cur}"`}><input type="color" id="customColor" value="${/^#[0-9A-F]{6}$/.test(cur)?cur.toLowerCase():"#ff0000"}"></label>`;
+  $("#customColor").addEventListener("input", e => { ed.t.color = e.target.value.toUpperCase(); updatePreview(); const l=e.target.parentElement; l.style.background=e.target.value; document.querySelectorAll("#swatches .sw.on").forEach(x=>x.classList.remove("on")); l.classList.add("on"); });
 }
-$("#swatches").addEventListener("click", e => { const b=e.target.closest(".sw"); if(!b) return; ed.t.color=b.dataset.c; renderSwatches(); updatePreview(); });
+$("#swatches").addEventListener("click", e => { const b=e.target.closest("button.sw"); if(!b) return; ed.t.color=b.dataset.c; renderSwatches(); updatePreview(); });
 function readDraft(){
   const t = ed.t;
   t.label = $("#fLabel").value.trim(); t.say = $("#fSay").value.trim() || undefined;

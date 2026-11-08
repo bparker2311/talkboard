@@ -110,7 +110,9 @@ Tap a picture or a **+** in parent mode to open the editor.
 - Real photos (her cup, her grandma, her favorite toy) are usually easier for a young child to recognize than emoji.
 
 **Color**
-Pick a background color. A common convention (the Fitzgerald Key) groups words by color:
+Pick a background color. **Soft** colors are for grouping words. **Bright** colors (red, blue, black, and so on) are for things like a Colors category: leave the emoji empty, and the word shows large in the middle of the color. The 🌈 swatch picks any other color. Text switches to white automatically on dark colors.
+
+For grouping words by soft color: A common convention (the Fitzgerald Key) groups words by color:
 
 | Color | Used for |
 |---|---|
