@@ -1,0 +1,45 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'app.talkboard'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "app.talkboard"
+        minSdk 24
+        targetSdk 34
+        // Each GitHub build gets a higher number so a new APK installs over the old one
+        versionCode((System.getenv("VERSION_CODE") ?: "1") as int)
+        versionName "1.0." + (System.getenv("VERSION_CODE") ?: "1")
+    }
+
+    signingConfigs {
+        release {
+            storeFile file("release.jks")
+            storePassword System.getenv("KEYSTORE_PASSWORD")
+            keyAlias "talkboard"
+            keyPassword System.getenv("KEYSTORE_PASSWORD")
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+// Name the output TalkBoard.apk
+android.applicationVariants.configureEach { variant ->
+    variant.outputs.configureEach { output ->
+        outputFileName = "TalkBoard.apk"
+    }
+}

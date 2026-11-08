@@ -25,3 +25,15 @@ Static files, no build step. In this folder:
 - Data lives only on the tablet (IndexedDB). Save a backup after big changes.
 
 After changing index.html, bump VERSION in sw.js so the tablet picks up the update.
+
+## Android app (for Samsung Kids)
+`android/` is a small standalone app that shows the TalkBoard site full-screen, uses Android's own
+text-to-speech voices, and works offline. It doesn't depend on Chrome, so it can be added to Samsung Kids.
+
+- Built automatically by GitHub Actions (`.github/workflows/android.yml`) whenever `android/` changes,
+  or on demand from the Actions tab → "Build Android app" → Run workflow.
+- Needs two repo secrets: `KEYSTORE_B64` (base64 of the signing key) and `KEYSTORE_PASSWORD`.
+  Keep the key file safe: updates must be signed with the same key or Android refuses to install them.
+- Latest APK: https://github.com/bparker2311/talkboard/releases/latest/download/TalkBoard.apk
+- The app loads the live site, so changes to index.html reach it without a new APK.
+- The app keeps its own storage, separate from Chrome. Move a board over with Save backup / Restore.
