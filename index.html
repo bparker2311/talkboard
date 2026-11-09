@@ -92,6 +92,7 @@
     background:rgba(255,255,255,.92); box-shadow:0 1px 3px rgba(0,0,0,.25); font-size:22px; display:flex; align-items:center; justify-content:center}
   .core .sign{width:34px; height:34px; font-size:17px}
   .sign.off{opacity:.3; filter:grayscale(1); box-shadow:none}
+  .sign.edit{pointer-events:none}
 
   .editbanner{display:none; background:#FFF4DE; color:#7A4B00; padding:8px 12px; font-size:15px; align-items:center; gap:10px}
   body.editing .editbanner{display:flex}
@@ -483,7 +484,8 @@ function tileHTML(t, where, idx){
   const showLbl = t.img || t.emoji;
   return `<button class="tile" style="--bg-tile:${esc(t.color||"#fff")};--fg-tile:${inkFor(t.color||"#FFFFFF")}" data-where="${where}" data-idx="${idx}">
     ${pic}${showLbl ? `<div class="lbl">${esc(t.label)}</div>` : ""}
-    ${hasSign && !editing ? `<span class="sign${signOff ? " off" : ""}" role="button" aria-label="Show sign" data-sign="1">🤟</span>` : ""}
+    ${!hasSign ? "" : editing ? `<span class="sign edit" aria-hidden="true">🤟</span>`
+      : `<span class="sign${signOff ? " off" : ""}" role="button" aria-label="Show sign" data-sign="1">🤟</span>`}
   </button>`;
 }
 function renderCore(){

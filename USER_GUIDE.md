@@ -88,6 +88,7 @@ All editing happens in parent mode, so your child can't change the board by acci
 
 In parent mode:
 - Every picture shows a ✎. **Tap a picture** to edit it.
+- Pictures that already have a sign video also show 🤟 in the corner, so you can see at a glance which words still need one.
 - Empty spots show **+**. **Tap +** to add a picture there.
 - **⚙️ Settings & categories** in the yellow banner opens Settings.
 - Hidden categories appear dimmed with 🙈.
